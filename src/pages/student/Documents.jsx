@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Async, Badge, Card, Field, PageHead, Table, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
+import { burst } from '../../lib/fx.js'
 import { fmtShort, peso, subtitle } from '../../lib/format.js'
 import { useApi } from '../../lib/hooks.js'
 
@@ -17,11 +18,13 @@ export default function Documents() {
 
   const submit = async (e, docTypeId) => {
     e.preventDefault()
+    const button = e.currentTarget.querySelector('button.btn')
     setError('')
     if (!form.pickupDate) return setError('Choose a pickup date.')
     setBusy(true)
     try {
       const res = await api.post('/student/documents/requests', { ...form, docTypeId, copies: Number(form.copies) })
+      burst(button)
       toast(`Request ${res.requestNo} submitted.`)
       setForm((f) => ({ ...f, remarks: '', pickupDate: '' }))
       state.reload()

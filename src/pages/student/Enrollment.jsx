@@ -30,7 +30,7 @@ export default function Enrollment() {
                 {d.steps.map((label, i) => {
                   const state = i < d.step ? 'done' : i === d.step ? 'current' : ''
                   return (
-                    <li key={label} className={state} aria-current={state === 'current' ? 'step' : undefined}>
+                    <li key={label} style={{ "--i": i }} className={state} aria-current={state === 'current' ? 'step' : undefined}>
                       <span className="dot">{state === 'done' && <CheckIcon width={16} height={16} />}</span>
                       {label}
                     </li>

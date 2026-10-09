@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
+import { prefersReducedMotion } from '../lib/fx.js'
 import { Link } from 'react-router-dom'
 import { statusTone } from '../lib/format.js'
 import { CloseIcon } from './icons.jsx'
@@ -32,11 +33,41 @@ export function Card({ title, sub, actions, flush, className = '', children }) {
   )
 }
 
+// Counts the leading number of a value up from zero ("₱6,000", "96", "2.4 days", "4 of 6").
+export function CountUp({ value, duration = 1000 }) {
+  const text = String(value)
+  const m = text.match(/^(₱?)(d[d,]*.?d*)(?![A-Za-zd])(.*)$/s)
+  const [progress, setProgress] = useState(() => (m && !prefersReducedMotion() ? 0 : 1))
+
+  useEffect(() => {
+    if (!m || prefersReducedMotion()) return undefined
+    let frame
+    const start = performance.now()
+    const tick = (now) => {
+      const t = Math.min((now - start) / duration, 1)
+      setProgress(1 - Math.pow(2, -10 * t)) // ease-out expo
+      if (t < 1) frame = requestAnimationFrame(tick)
+      else setProgress(1)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [text, duration]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!m || progress >= 1) return text
+  const [, prefix, num, suffix] = m
+  const decimals = num.includes('.') ? num.split('.')[1].length : 0
+  const n = Number(num.replace(/,/g, '')) * progress
+  const shown = n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: num.includes(',') })
+  return `${prefix}${shown}${suffix}`
+}
+
 export function Stat({ label, value, hint, tone, to }) {
   const body = (
     <>
       <div className="label">{label}</div>
-      <div className="value">{value}</div>
+      <div className="value">
+        <CountUp value={value} />
+      </div>
       {hint && <div className="hint">{hint}</div>}
     </>
   )
@@ -90,7 +121,18 @@ export function Table({ columns, rows, rowKey = 'id', empty = 'Nothing to show y
   )
 }
 
-export const Loading = () => <div className="spinner" role="status" aria-label="Loading" />
+export const Loading = () => (
+  <div className="skeleton-page" role="status" aria-label="Loading">
+    <div className="sk sk-title" />
+    <div className="sk sk-sub" />
+    <div className="sk-grid">
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="sk sk-card" style={{ animationDelay: `${i * 120}ms` }} />
+      ))}
+    </div>
+    <div className="sk sk-block" />
+  </div>
+)
 
 export function ErrorState({ error, retry }) {
   return (
@@ -197,7 +239,7 @@ export function StackedBars({ rows, series }) {
           {series[1]}
         </span>
       </div>
-      {rows.map((r) => (
+      {rows.map((r, i) => (
         <div className="chart-row" key={r.label}>
           <span>{r.label}</span>
           <div
@@ -205,8 +247,8 @@ export function StackedBars({ rows, series }) {
             role="img"
             aria-label={`${r.label}: ${r.a} ${series[0].toLowerCase()}, ${r.b} ${series[1].toLowerCase()}`}
           >
-            <span className="a" style={{ width: `${(r.a / max) * 100}%` }} />
-            <span className="b" style={{ width: `${(r.b / max) * 100}%` }} />
+            <span className="a" style={{ width: `${(r.a / max) * 100}%`, "--i": i }} />
+            <span className="b" style={{ width: `${(r.b / max) * 100}%`, "--i": i }} />
           </div>
           <span className="num">{r.a + r.b}</span>
         </div>

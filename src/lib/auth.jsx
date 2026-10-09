@@ -19,7 +19,12 @@ export function AuthProvider({ children }) {
   const [theme, setThemeState] = useState(readTheme)
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
+    const root = document.documentElement
+    if (root.dataset.theme && root.dataset.theme !== theme) {
+      root.classList.add('theme-fade')
+      setTimeout(() => root.classList.remove('theme-fade'), 450)
+    }
+    root.dataset.theme = theme
     try {
       localStorage.setItem(THEME_KEY, theme)
     } catch {

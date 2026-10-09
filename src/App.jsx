@@ -2,7 +2,9 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import Layout from './components/Layout.jsx'
 import { Loading, ToastProvider } from './components/ui.jsx'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
+import { RealtimeProvider } from './lib/realtime.jsx'
 import Login from './pages/Login.jsx'
+import MessagesPage from './pages/MessagesPage.jsx'
 import Settings from './pages/Settings.jsx'
 import StudentAccount from './pages/student/Account.jsx'
 import StudentClearance from './pages/student/Clearance.jsx'
@@ -13,6 +15,10 @@ import StudentHome from './pages/student/Home.jsx'
 import StudentSchedule from './pages/student/Schedule.jsx'
 import StudentSubjects from './pages/student/Subjects.jsx'
 import StudentTasks from './pages/student/Tasks.jsx'
+import StudentTaskDetail from './pages/student/TaskDetail.jsx'
+import TeacherActivities from './pages/teacher/Activities.jsx'
+import TeacherActivityDetail from './pages/teacher/ActivityDetail.jsx'
+import TeacherHome from './pages/teacher/Home.jsx'
 import StudentTracker from './pages/student/Tracker.jsx'
 import RegistrarClearance from './pages/registrar/Clearance.jsx'
 import RegistrarHome from './pages/registrar/Home.jsx'
@@ -26,6 +32,7 @@ const STUDENT_NAV = [
   { to: 'tasks', label: 'Pending Tasks' },
   { to: 'schedule', label: 'Schedule' },
   { to: 'tracker', label: 'Academic Tracker' },
+  { to: 'messages', label: 'Messages' },
 ]
 const STUDENT_NAV_2 = [
   { to: 'grades', label: 'Grades per Semester' },
@@ -33,6 +40,11 @@ const STUDENT_NAV_2 = [
   { to: 'clearance', label: 'E-Clearance' },
   { to: 'documents', label: 'Documents and Forms' },
   { to: 'account', label: 'Account Summary' },
+]
+const TEACHER_NAV = [
+  { to: '', label: 'Home' },
+  { to: 'activities', label: 'Activities' },
+  { to: 'messages', label: 'Messages' },
 ]
 const REGISTRAR_NAV = [
   { to: '', label: 'Home' },
@@ -42,12 +54,15 @@ const REGISTRAR_NAV = [
   { to: 'reports', label: 'Reports' },
 ]
 
+const HOME = { student: '/', registrar: '/registrar', teacher: '/teacher' }
+const LOGIN = { student: '/login', registrar: '/registrar/login', teacher: '/teacher/login' }
+
 function Guard({ role, children }) {
   const { user, ready } = useAuth()
   const location = useLocation()
   if (!ready) return <Loading />
-  if (!user) return <Navigate to={role === 'registrar' ? '/registrar/login' : '/login'} state={{ from: location.pathname }} replace />
-  if (user.role !== role) return <Navigate to={user.role === 'registrar' ? '/registrar' : '/'} replace />
+  if (!user) return <Navigate to={LOGIN[role]} state={{ from: location.pathname + location.search }} replace />
+  if (user.role !== role) return <Navigate to={HOME[user.role]} replace />
   return children
 }
 
@@ -56,6 +71,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login role="student" />} />
       <Route path="/registrar/login" element={<Login role="registrar" />} />
+      <Route path="/teacher/login" element={<Login role="teacher" />} />
 
       <Route
         path="/"
@@ -68,6 +84,8 @@ function AppRoutes() {
         <Route index element={<StudentHome />} />
         <Route path="subjects" element={<StudentSubjects />} />
         <Route path="tasks" element={<StudentTasks />} />
+        <Route path="tasks/:id" element={<StudentTaskDetail />} />
+        <Route path="messages" element={<MessagesPage />} />
         <Route path="schedule" element={<StudentSchedule />} />
         <Route path="tracker" element={<StudentTracker />} />
         <Route path="grades" element={<StudentGrades />} />
@@ -75,6 +93,21 @@ function AppRoutes() {
         <Route path="clearance" element={<StudentClearance />} />
         <Route path="documents" element={<StudentDocuments />} />
         <Route path="account" element={<StudentAccount />} />
+        <Route path="settings" element={<Settings />} />
+      </Route>
+
+      <Route
+        path="/teacher"
+        element={
+          <Guard role="teacher">
+            <Layout kind="FIS" brandName="Faculty Portal" base="/teacher" nav={TEACHER_NAV} />
+          </Guard>
+        }
+      >
+        <Route index element={<TeacherHome />} />
+        <Route path="activities" element={<TeacherActivities />} />
+        <Route path="activities/:id" element={<TeacherActivityDetail />} />
+        <Route path="messages" element={<MessagesPage />} />
         <Route path="settings" element={<Settings />} />
       </Route>
 
@@ -103,9 +136,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ToastProvider>
-          <AppRoutes />
-        </ToastProvider>
+        <RealtimeProvider>
+          <ToastProvider>
+            <AppRoutes />
+          </ToastProvider>
+        </RealtimeProvider>
       </AuthProvider>
     </BrowserRouter>
   )

@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
 import { timeAgo } from '../lib/format.js'
+import { useRealtime, useRealtimeEvents } from '../lib/realtime.jsx'
 import { BellIcon, BulbIcon, Logo, MenuIcon, UserIcon } from './icons.jsx'
 import { useClickAway, useToast } from './ui.jsx'
 
@@ -15,6 +16,7 @@ function NotificationBell({ base }) {
   useClickAway(ref, close)
 
   const load = useCallback(() => api.get('/notifications').then(setData).catch(() => {}), [])
+  useRealtimeEvents((ev) => ev.type === 'notification' && load())
   useEffect(() => {
     load()
     const timer = setInterval(load, 30000)
@@ -25,7 +27,7 @@ function NotificationBell({ base }) {
     if (!n.isRead) await api.post(`/notifications/${n.id}/read`).catch(() => {})
     setOpen(false)
     load()
-    if (n.link) navigate(n.link.startsWith('/registrar') ? n.link : base + n.link)
+    if (n.link) navigate(n.link.startsWith('/registrar') || n.link.startsWith('/teacher') ? n.link : base + n.link)
   }
 
   const readAll = async () => {
@@ -36,7 +38,7 @@ function NotificationBell({ base }) {
   return (
     <div className="popover-wrap" ref={ref}>
       <button
-        className="icon-btn"
+        className={`icon-btn ${data.unread > 0 ? 'has-unread' : ''}`}
         onClick={() => {
           setOpen(!open)
           if (!open) load()
@@ -102,6 +104,7 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
   const { user, theme, savePreferences } = useAuth()
   const toast = useToast()
   const location = useLocation()
+  const { unread: unreadMessages } = useRealtime()
   // the mobile drawer closes by itself when the route changes
   const [openAt, setOpenAt] = useState(null)
   const open = openAt === location.pathname
@@ -128,6 +131,7 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
       className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
     >
       {item.label}
+      {item.to === 'messages' && unreadMessages > 0 && <span className="nav-badge">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}
     </NavLink>
   )
 
@@ -153,7 +157,7 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
             <button className="icon-btn menu-btn" onClick={() => setOpen(!open)} aria-label="Open menu">
               <MenuIcon />
             </button>
-            <span className="id">{user.role === 'student' ? user.loginId : 'Registrar'}</span>
+            <span className="id">{{ student: user.loginId, registrar: 'Registrar', teacher: 'Faculty' }[user.role]}</span>
             <span className="sep" />
             <span className="name">{user.name}</span>
           </div>
@@ -171,7 +175,9 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
           </div>
         </header>
         <main className="content" id="main">
-          <Outlet />
+          <div className="page" key={location.pathname}>
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

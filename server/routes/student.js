@@ -15,6 +15,8 @@ import {
   reqNo,
   scaleFor,
   termLabel,
+  UNREAD_IN_TASK,
+  notify,
 } from '../util.js'
 import { requireAuth } from './auth.js'
 
@@ -36,9 +38,9 @@ function currentSubjects(studentId, termId) {
 function meetingsFor(studentId, termId) {
   return db
     .prepare(
-      `SELECT m.id, m.subject_id AS subjectId, s.code, s.description, m.instructor, m.day,
+      `SELECT m.id, m.subject_id AS subjectId, s.code, s.description, COALESCE(u.name, m.instructor) AS instructor, m.day,
               m.start_min AS startMin, m.end_min AS endMin, m.room
-       FROM meetings m JOIN subjects s ON s.id = m.subject_id
+       FROM meetings m JOIN subjects s ON s.id = m.subject_id LEFT JOIN users u ON u.id = m.teacher_id
        JOIN student_subjects ss ON ss.subject_id = s.id AND ss.student_id = ? AND ss.term_id = ?
        ORDER BY m.day, m.start_min`,
     )
@@ -116,16 +118,21 @@ router.get('/schedule', (req, res) => {
 })
 
 // ---- pending tasks ------------------------------------------------------------
+const TASK_SELECT = `
+  SELECT t.id, a.title, a.kind, a.points, a.due_at AS dueAt, a.instructions, t.done, t.done_at AS doneAt,
+         s.code, s.description, a.teacher_id AS teacherId, COALESCE(u.name, 'Teacher') AS instructor,
+         (SELECT COUNT(*) FROM task_messages m WHERE m.task_id = t.id AND m.deleted_at IS NULL) AS comments,
+         ${UNREAD_IN_TASK} AS unread
+  FROM tasks t
+  JOIN activities a ON a.id = t.activity_id
+  JOIN subjects s ON s.id = a.subject_id
+  LEFT JOIN users u ON u.id = a.teacher_id`
+
 router.get('/tasks', (req, res) => {
   const term = currentTerm()
   const tasks = db
-    .prepare(
-      `SELECT t.id, t.title, t.kind, t.points, t.due_at AS dueAt, t.instructor, t.done,
-              s.code, s.description
-       FROM tasks t JOIN subjects s ON s.id = t.subject_id
-       WHERE t.student_id = ? ORDER BY t.done, t.due_at`,
-    )
-    .all(req.user.id)
+    .prepare(`${TASK_SELECT} WHERE t.student_id = ? ORDER BY t.done, a.due_at`)
+    .all(req.user.id, req.user.id, req.user.id)
   res.json({
     term: termLabel(term),
     yearLevel: profile(req.user.id).year_level,
@@ -133,10 +140,27 @@ router.get('/tasks', (req, res) => {
   })
 })
 
+router.get('/tasks/:id', (req, res) => {
+  const task = db.prepare(`${TASK_SELECT} WHERE t.id = ? AND t.student_id = ?`).get(req.user.id, req.user.id, req.params.id, req.user.id)
+  if (!task) throw new HttpError(404, 'Task not found.')
+  res.json({
+    term: termLabel(currentTerm()),
+    yearLevel: profile(req.user.id).year_level,
+    task: { ...task, done: !!task.done },
+  })
+})
+
 router.post('/tasks/:id/toggle', (req, res) => {
-  const info = db.prepare('UPDATE tasks SET done = 1 - done WHERE id=? AND student_id=?').run(req.params.id, req.user.id)
+  const now = nowIso()
+  const info = db
+    .prepare('UPDATE tasks SET done = 1 - done, done_at = CASE WHEN done = 0 THEN ? ELSE NULL END WHERE id=? AND student_id=?')
+    .run(now, req.params.id, req.user.id)
   if (!info.changes) throw new HttpError(404, 'Task not found.')
-  res.json({ ok: true })
+  const t = db
+    .prepare('SELECT t.done, a.title, a.teacher_id AS teacherId FROM tasks t JOIN activities a ON a.id = t.activity_id WHERE t.id = ?')
+    .get(req.params.id)
+  if (t.done && t.teacherId) notify(t.teacherId, `${req.user.name} marked “${t.title}” as done.`, '/teacher/activities')
+  res.json({ ok: true, done: !!t.done })
 })
 
 // ---- academic tracker ---------------------------------------------------------

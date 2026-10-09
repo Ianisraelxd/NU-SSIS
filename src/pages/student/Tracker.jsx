@@ -18,7 +18,7 @@ export default function Tracker() {
             </div>
 
             <Card title="Progress per year level">
-              {d.progress.map((p) => (
+              {d.progress.map((p, i) => (
                 <div className="progress-row" key={p.year}>
                   <span>{yearName(p.year).replace(' Year', '')} Year</span>
                   <div
@@ -29,7 +29,7 @@ export default function Tracker() {
                     aria-valuemax={100}
                     aria-label={`${yearName(p.year)} progress`}
                   >
-                    <span style={{ width: `${p.percent}%` }} />
+                    <span style={{ width: `${p.percent}%`, "--i": i }} />
                   </div>
                   <b>{p.percent}%</b>
                 </div>
