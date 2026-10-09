@@ -1,6 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
-import { Loading, ToastProvider } from './components/ui.jsx'
+import { ConfirmProvider, Loading, ToastProvider } from './components/ui.jsx'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { RealtimeProvider } from './lib/realtime.jsx'
 import Login from './pages/Login.jsx'
@@ -138,7 +138,9 @@ export default function App() {
       <AuthProvider>
         <RealtimeProvider>
           <ToastProvider>
-            <AppRoutes />
+            <ConfirmProvider>
+              <AppRoutes />
+            </ConfirmProvider>
           </ToastProvider>
         </RealtimeProvider>
       </AuthProvider>

@@ -344,3 +344,8 @@
 .logo-fis { color: var(--gold); }
 .sidebar .brand .logo { margin-bottom: 4px; }
 .login-card .logo { margin: 0 auto; }
+
+.btn.danger-solid { background: var(--bad); border-color: var(--bad); color: #fff; }
+.btn.danger-solid:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 85%, #000); box-shadow: 0 10px 22px color-mix(in srgb, var(--bad) 40%, transparent); }
+
+:root[data-theme='dark'] .btn.danger-solid { color: #2a0a08; }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import Chat from '../../components/Chat.jsx'
-import { Async, Badge, Card, PageHead, Stat, useToast } from '../../components/ui.jsx'
+import { Async, Badge, Card, PageHead, Stat, useConfirm, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { fmtDateTime, timeAgo } from '../../lib/format.js'
 import { useApi } from '../../lib/hooks.js'
@@ -20,6 +20,7 @@ export default function ActivityDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const toast = useToast()
+  const confirm = useConfirm()
   const state = useApi(`/teacher/activities/${id}`)
   const [picked, setPicked] = useState(null)
 
@@ -28,7 +29,12 @@ export default function ActivityDetail() {
   })
 
   const remove = async (activity) => {
-    if (!window.confirm(`Delete “${activity.title}”? Students will lose it, along with every comment on it.`)) return
+    const ok = await confirm({
+      title: 'Delete this activity?',
+      message: `“${activity.title}” will disappear for every student, along with all the comments on it.`,
+      confirmLabel: 'Delete activity',
+    })
+    if (!ok) return
     try {
       await api.delete(`/teacher/activities/${activity.id}`)
       toast('Activity deleted.')

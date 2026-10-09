@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { api } from '../lib/api.js'
 import { useRealtimeEvents } from '../lib/realtime.jsx'
 import { BackIcon, EditIcon, SendIcon, SmileIcon, TrashIcon } from './icons.jsx'
-import { Loading, useToast } from './ui.jsx'
+import { Loading, useConfirm, useToast } from './ui.jsx'
 
 const EMOJI = ['👍', '🙏', '😊', '😅', '🤔', '❗', '✅', '📎', '🎉', '😢', '🙌', '💡']
 const GROUP_GAP = 5 * 60 * 1000
@@ -45,6 +45,7 @@ function linkify(text) {
 // Render with key={taskId} so switching threads starts from a clean slate.
 export default function Chat({ taskId, onBack }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [state, setState] = useState({ loading: true, error: null, data: null })
   const [messages, setMessages] = useState([])
   const [peerLastRead, setPeerLastRead] = useState(0)
@@ -186,7 +187,12 @@ export default function Chat({ taskId, onBack }) {
   }
 
   const remove = async (m) => {
-    if (!window.confirm('Delete this comment for everyone?')) return
+    const ok = await confirm({
+      title: 'Delete this comment?',
+      message: 'It will be removed for both of you. This can’t be undone.',
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
     try {
       const { message } = await api.delete(`/messages/${m.id}`)
       setMessages((list) => list.map((x) => (x.id === message.id ? message : x)))

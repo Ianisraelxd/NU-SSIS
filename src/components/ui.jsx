@@ -185,6 +185,46 @@ export function Modal({ title, onClose, children, footer }) {
   )
 }
 
+// An in-app replacement for window.confirm() — browsers and embedded webviews can silently block
+// the native popup (it then answers "No" and nothing happens). Usage:
+//   const confirm = useConfirm();  if (!(await confirm({ title, message, confirmLabel }))) return
+const ConfirmContext = createContext(async () => false)
+export const useConfirm = () => useContext(ConfirmContext)
+
+export function ConfirmProvider({ children }) {
+  const [dialog, setDialog] = useState(null)
+  const confirm = useCallback((options) => new Promise((resolve) => setDialog({ ...options, resolve })), [])
+  const close = useCallback((value) => {
+    setDialog((current) => {
+      current?.resolve(value)
+      return null
+    })
+  }, [])
+  return (
+    <ConfirmContext.Provider value={confirm}>
+      {children}
+      {dialog && (
+        <Modal
+          title={dialog.title ?? 'Are you sure?'}
+          onClose={() => close(false)}
+          footer={
+            <>
+              <button className="btn secondary" onClick={() => close(false)}>
+                {dialog.cancelLabel ?? 'Keep it'}
+              </button>
+              <button className={`btn ${dialog.danger === false ? '' : 'danger-solid'}`} onClick={() => close(true)} autoFocus>
+                {dialog.confirmLabel ?? 'Confirm'}
+              </button>
+            </>
+          }
+        >
+          <p style={{ lineHeight: 1.6 }}>{dialog.message}</p>
+        </Modal>
+      )}
+    </ConfirmContext.Provider>
+  )
+}
+
 const ToastContext = createContext(() => {})
 export const useToast = () => useContext(ToastContext)
 

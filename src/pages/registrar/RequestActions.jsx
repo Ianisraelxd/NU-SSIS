@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useToast } from '../../components/ui.jsx'
+import { useConfirm, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { burst } from '../../lib/fx.js'
 
@@ -12,13 +12,22 @@ const NEXT = {
 // Buttons that move one request through Pending → Processing → Ready → Completed.
 export default function RequestActions({ request, onChange, compact }) {
   const toast = useToast()
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
   const next = NEXT[request.status]
   const canCancel = ['Pending', 'Processing', 'Ready'].includes(request.status)
 
   const move = async (status, event) => {
     const target = event.currentTarget
-    if (status === 'Cancelled' && !window.confirm(`Cancel ${request.requestNo} for ${request.studentName}?`)) return
+    if (status === 'Cancelled') {
+      const ok = await confirm({
+        title: 'Cancel this request?',
+        message: `${request.requestNo} (${request.document}) for ${request.studentName} will be cancelled and the student will be notified.`,
+        confirmLabel: 'Cancel request',
+        cancelLabel: 'Keep it',
+      })
+      if (!ok) return
+    }
     setBusy(true)
     try {
       await api.patch(`/registrar/requests/${request.id}`, { status })
