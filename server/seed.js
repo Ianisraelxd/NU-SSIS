@@ -4,8 +4,10 @@ import { hashPassword } from './util.js'
 // Demo accounts (development only — change them in Settings after signing in):
 //   Students   26001001 … 26001008   password: password123
 //   Registrar  REG-0001               password: registrar123
+//   Teachers   T-0001 … T-0007        password: teacher123
 export const DEMO_STUDENT_PASSWORD = 'password123'
 export const DEMO_REGISTRAR_PASSWORD = 'registrar123'
+export const DEMO_TEACHER_PASSWORD = 'teacher123'
 
 const DAY = 86400000
 const daysAgo = (n, hour = 10) => {
@@ -20,6 +22,7 @@ const dueIn = (n) => {
 }
 const dateOnly = (offsetDays) => new Date(Date.now() + offsetDays * DAY).toISOString().slice(0, 10)
 const hm = (h, m = 0) => h * 60 + m
+const minsAgo = (n) => new Date(Date.now() - n * 60000).toISOString()
 
 // small deterministic PRNG so every fresh database looks the same
 let seedState = 20260101
@@ -49,6 +52,14 @@ const CURRENT_SUBJECTS = [
   ['ITP107', 'Mobile Application Development', 3, [['Albert Q. Alforja', 3, hm(13), hm(15), '310'], ['Sairine C. Pregonero', 3, hm(7), hm(10), 'COMLAB 3']], [89.34, 89.2]],
   ['ITEW3', 'Mobile Programming 1', 3, [['Jearemy Niko Nositera', 4, hm(8), hm(11), 'COMLAB 3']], [85.1, 86.4]],
   ['ITP106', 'Information Assurance and Security 1', 3, [['Marvin H. Bicua', 1, hm(8), hm(10), '311'], ['Marvin H. Bicua', 4, hm(11), hm(13), '311']], [82.25, 84.8]],
+]
+
+const ACTIVITIES = [
+  ['Finals Laboratory Activity 1', 'Finals Assignment', 100, 2, 0, 'Create the use-case and activity diagrams for the school enrollment system, then add the ERD on the last page. Submit one PDF. Cite any references you used.'],
+  ['Finals Lecture Activity 2', 'Finals Assignment', 20, 5, 2, 'Answer the five guide questions on system integration patterns in your own words. Maximum of two pages.'],
+  ['Finals Laboratory Quiz 1 & 2', 'Finals Assignment', 100, 7, 5, 'Open-book laboratory quiz on mobile UI components and navigation. Submit your project ZIP once finished.'],
+  ['System Design Documentation', 'Project', 50, 10, 1, 'Document the network design for the assigned scenario: topology, addressing plan and device list.'],
+  ['Network Topology Case Study', 'Finals Assignment', 40, 12, 1, 'Analyse the provided case and recommend an improved topology with a short justification.'],
 ]
 
 const PAST_TERMS = [
@@ -134,14 +145,29 @@ function seed() {
   // subjects + meetings (current term)
   const insSubject = db.prepare('INSERT INTO subjects (code, description, units) VALUES (?,?,?) RETURNING id')
   const insMeeting = db.prepare(
-    'INSERT INTO meetings (subject_id, instructor, day, start_min, end_min, room) VALUES (?,?,?,?,?,?)',
+    'INSERT INTO meetings (subject_id, instructor, teacher_id, day, start_min, end_min, room) VALUES (?,?,?,?,?,?,?)',
   )
+  const teacherHash = hashPassword(DEMO_TEACHER_PASSWORD)
+  const teacherIds = {}
+  for (const name of new Set(CURRENT_SUBJECTS.flatMap(([, , , meetings]) => meetings.map((m) => m[0])))) {
+    const n = Object.keys(teacherIds).length + 1
+    const slug = name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^.+|.+$/g, '')
+    teacherIds[name] = insUser.get('teacher', `T-${String(n).padStart(4, '0')}`, teacherHash, name, `${slug}@nu-laguna.edu.ph`).id
+  }
   const currentSubjectIds = CURRENT_SUBJECTS.map(([code, desc, units, meetings]) => {
     const id = insSubject.get(code, desc, units).id
-    for (const [instructor, day, s, e, room] of meetings) insMeeting.run(id, instructor, day, s, e, room)
+    for (const [instructor, day, s, e, room] of meetings) insMeeting.run(id, instructor, teacherIds[instructor], day, s, e, room)
     return id
   })
   const pastSubjectIds = PAST_TERMS.map((t) => t.subjects.map(([code, desc, units]) => insSubject.get(code, desc, units).id))
+
+  // activities (shared by the whole class)
+  const insActivity = db.prepare(
+    'INSERT INTO activities (subject_id, teacher_id, title, kind, points, due_at, instructions, created_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id',
+  )
+  const activityIds = ACTIVITIES.map(([title, kind, points, due, subjIdx, instructions]) =>
+    insActivity.get(currentSubjectIds[subjIdx], teacherIds[CURRENT_SUBJECTS[subjIdx][3][0][0]], title, kind, points, dueIn(due), instructions, minsAgo(60 * 24 * 6)).id,
+  )
 
   // doc types
   const insDoc = db.prepare('INSERT INTO doc_types (name, fee, requires_clearance) VALUES (?,?,?)')
@@ -159,7 +185,7 @@ function seed() {
     'INSERT INTO student_subjects (student_id, subject_id, term_id, prelim, midterm, finals) VALUES (?,?,?,?,?,?)',
   )
   const insTask = db.prepare(
-    'INSERT INTO tasks (student_id, subject_id, title, kind, points, due_at, instructor, done) VALUES (?,?,?,?,?,?,?,?)',
+    'INSERT INTO tasks (student_id, activity_id) VALUES (?,?) RETURNING id',
   )
   const insClear = db.prepare('INSERT INTO clearances (student_id, office, requirement, status, remarks) VALUES (?,?,?,?,?)')
   const insFee = db.prepare('INSERT INTO fees (student_id, term_id, name, amount) VALUES (?,?,?,?)')
@@ -168,6 +194,7 @@ function seed() {
   )
 
   const studentIds = []
+  let juanTasks = []
   STUDENTS.forEach(([loginId, name, year, section, step], index) => {
     const isJuan = index === 0
     const email = `${loginId}@students.nu-laguna.edu.ph`
@@ -195,18 +222,9 @@ function seed() {
       })
     }
 
-    // pending tasks
-    const tasks = [
-      ['Finals Laboratory Activity 1', 'Finals Assignment', 100, 2, 0],
-      ['Finals Lecture Activity 2', 'Finals Assignment', 20, 5, 2],
-      ['Finals Laboratory Quiz 1 & 2', 'Finals Assignment', 100, 7, 5],
-      ['System Design Documentation', 'Project', 50, 10, 1],
-      ['Network Topology Case Study', 'Finals Assignment', 40, 12, 1],
-    ]
-    for (const [title, kind, points, due, subjectIdx] of tasks) {
-      const subjIdx = isJuan && title.includes('Quiz') ? 5 : subjectIdx
-      insTask.run(id, currentSubjectIds[subjIdx], title, kind, points, dueIn(due), CURRENT_SUBJECTS[subjIdx][3][0][0], 0)
-    }
+    // every student gets their own copy of each class activity
+    const taskIds = activityIds.map((activityId) => insTask.get(id, activityId).id)
+    if (isJuan) juanTasks = taskIds
 
     // clearances (Juan: 4 cleared, cashier pending, registrar hold — as designed)
     OFFICES.forEach(([office, requirement]) => {
@@ -281,6 +299,22 @@ function seed() {
   // announcements
   const insAnn = db.prepare('INSERT INTO announcements (title, body, author_id, created_at) VALUES (?,?,?,?)')
   for (const [title, body, age] of ANNOUNCEMENTS) insAnn.run(title, body, registrarId, daysAgo(age))
+
+  // sample private-comment threads for Juan
+  const insMsg = db.prepare('INSERT INTO task_messages (task_id, sender_id, body, created_at) VALUES (?,?,?,?) RETURNING id')
+  const markRead = db.prepare('INSERT INTO thread_reads (task_id, user_id, last_read_id) VALUES (?,?,?)')
+  const nositera = teacherIds['Jearemy Niko Nositera']
+
+  const t1 = juanTasks[0]
+  insMsg.get(t1, juan, 'Good day, sir! For Lab Activity 1, do we need to include the ERD in the same PDF?', minsAgo(190))
+  insMsg.get(t1, nositera, 'Good day, Juan! Yes — please put the ERD on the last page of the same PDF so I can check everything in one go.', minsAgo(172))
+  const thanks = insMsg.get(t1, juan, 'Noted, thank you sir! 🙏', minsAgo(165)).id
+  insMsg.get(t1, nositera, 'Reminder: the deadline is 11:59 PM on the due date. Late submissions lose 10 points per day.', minsAgo(6))
+  markRead.run(t1, juan, thanks)
+  markRead.run(t1, nositera, thanks + 1)
+  const t3 = juanTasks[1]
+  const ask = insMsg.get(t3, juan, 'Good afternoon, ma’am. May I ask for a short extension for Lecture Activity 2? Our team has a defense on the same day.', minsAgo(35)).id
+  markRead.run(t3, juan, ask)
 
   // a couple of starter notifications for Juan
   const insNote = db.prepare('INSERT INTO notifications (user_id, message, link, created_at) VALUES (?,?,?,?)')

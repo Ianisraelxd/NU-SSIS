@@ -8,6 +8,8 @@ import authRoutes from './routes/auth.js'
 import commonRoutes from './routes/common.js'
 import studentRoutes from './routes/student.js'
 import registrarRoutes from './routes/registrar.js'
+import teacherRoutes from './routes/teacher.js'
+import { messagesRouter, streamRouter } from './routes/messages.js'
 
 if (seedIfEmpty()) console.log('Database was empty — loaded demo data.')
 
@@ -18,6 +20,9 @@ app.use(express.json({ limit: '100kb' }))
 app.use('/api/auth', authRoutes)
 app.use('/api/student', studentRoutes)
 app.use('/api/registrar', registrarRoutes)
+app.use('/api/teacher', teacherRoutes)
+app.use('/api/stream', streamRouter)
+app.use('/api', messagesRouter)
 app.use('/api', commonRoutes)
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }))

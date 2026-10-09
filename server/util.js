@@ -1,5 +1,6 @@
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
 import { db } from './db.js'
+import { publish } from './realtime.js'
 
 export function hashPassword(password) {
   const salt = randomBytes(16).toString('hex')
@@ -111,6 +112,7 @@ export function notify(userId, message, link = null) {
     link,
     nowIso(),
   )
+  publish(userId, { type: 'notification' })
 }
 
 export function notifyRegistrars(message, link = null) {
@@ -120,3 +122,18 @@ export function notifyRegistrars(message, link = null) {
 export const reqNo = (id) => `REQ-${String(id).padStart(4, '0')}`
 
 export const ENROLLMENT_STEPS = ['Registration', 'Subject Advising', 'Fee Assessment', 'Payment', 'Enrolled']
+
+// ---- chat helpers -----------------------------------------------------------
+
+// Number of unread messages in task `t` for a user. Bind parameters: (userId, userId).
+export const UNREAD_IN_TASK = `(
+  SELECT COUNT(*) FROM task_messages m
+  LEFT JOIN thread_reads r ON r.task_id = m.task_id AND r.user_id = ?
+  WHERE m.task_id = t.id AND m.sender_id <> ? AND m.deleted_at IS NULL AND m.id > COALESCE(r.last_read_id, 0)
+)`
+
+export const MESSAGE_COLUMNS = `m.id, m.task_id AS taskId, m.sender_id AS senderId,
+  CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END AS body,
+  m.created_at AS createdAt, m.edited_at AS editedAt, (m.deleted_at IS NOT NULL) AS deleted`
+
+export const shapeMessage = (m) => ({ ...m, deleted: !!m.deleted })

@@ -11,7 +11,21 @@ const PORTALS = {
     idLabel: 'Student Number',
     autoComplete: 'username',
     home: '/',
-    other: { to: '/registrar/login', label: 'Registrar or staff? Sign in here' },
+    others: [
+      { to: '/teacher/login', label: 'Teacher? Sign in here' },
+      { to: '/registrar/login', label: 'Registrar or staff? Sign in here' },
+    ],
+  },
+  teacher: {
+    kind: 'FIS',
+    title: 'Faculty Portal',
+    idLabel: 'Employee ID',
+    autoComplete: 'username',
+    home: '/teacher',
+    others: [
+      { to: '/login', label: 'Student? Sign in here' },
+      { to: '/registrar/login', label: 'Registrar or staff? Sign in here' },
+    ],
   },
   registrar: {
     kind: 'RIS',
@@ -19,7 +33,10 @@ const PORTALS = {
     idLabel: 'Employee ID',
     autoComplete: 'username',
     home: '/registrar',
-    other: { to: '/login', label: 'Student? Sign in here' },
+    others: [
+      { to: '/login', label: 'Student? Sign in here' },
+      { to: '/teacher/login', label: 'Teacher? Sign in here' },
+    ],
   },
 }
 
@@ -35,7 +52,7 @@ export default function Login({ role }) {
   const [busy, setBusy] = useState(false)
   const [forgot, setForgot] = useState(false)
 
-  if (user) return <Navigate to={user.role === 'registrar' ? '/registrar' : '/'} replace />
+  if (user) return <Navigate to={{ student: '/', registrar: '/registrar', teacher: '/teacher' }[user.role]} replace />
 
   const submit = async (e) => {
     e.preventDefault()
@@ -55,7 +72,7 @@ export default function Login({ role }) {
   return (
     <div className="login">
       <div className="login-card">
-        <Logo kind={portal.kind} size={150} />
+        <Logo kind={portal.kind} size={230} />
         <h1>
           <small>National University</small>
           {portal.title}
@@ -109,7 +126,11 @@ export default function Login({ role }) {
           <button type="button" onClick={() => setForgot(true)}>
             Forgot your password?
           </button>
-          <Link to={portal.other.to}>{portal.other.label}</Link>
+          {portal.others.map((o) => (
+            <Link key={o.to} to={o.to}>
+              {o.label}
+            </Link>
+          ))}
         </div>
         <p className="login-foot">National University · Laguna Campus</p>
       </div>

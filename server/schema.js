@@ -1,7 +1,7 @@
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
-  role TEXT NOT NULL CHECK (role IN ('student','registrar')),
+  role TEXT NOT NULL CHECK (role IN ('student','registrar','teacher')),
   login_id TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   name TEXT NOT NULL,
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   id INTEGER PRIMARY KEY,
   subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
   instructor TEXT NOT NULL,
+  teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 6),
   start_min INTEGER NOT NULL,
   end_min INTEGER NOT NULL,
@@ -70,16 +71,45 @@ CREATE TABLE IF NOT EXISTS student_subjects (
   PRIMARY KEY (student_id, subject_id, term_id)
 );
 
-CREATE TABLE IF NOT EXISTS tasks (
+CREATE TABLE IF NOT EXISTS activities (
   id INTEGER PRIMARY KEY,
-  student_id INTEGER NOT NULL REFERENCES students(user_id) ON DELETE CASCADE,
   subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+  teacher_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
   title TEXT NOT NULL,
   kind TEXT NOT NULL,
   points INTEGER NOT NULL,
   due_at TEXT NOT NULL,
-  instructor TEXT NOT NULL,
-  done INTEGER NOT NULL DEFAULT 0
+  instructions TEXT,
+  created_at TEXT NOT NULL
+);
+
+-- one row per student per activity (the student's copy of the activity)
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY,
+  student_id INTEGER NOT NULL REFERENCES students(user_id) ON DELETE CASCADE,
+  activity_id INTEGER NOT NULL REFERENCES activities(id) ON DELETE CASCADE,
+  done INTEGER NOT NULL DEFAULT 0,
+  done_at TEXT,
+  UNIQUE (student_id, activity_id)
+);
+
+-- private comments between a student and the teacher, per task
+CREATE TABLE IF NOT EXISTS task_messages (
+  id INTEGER PRIMARY KEY,
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  edited_at TEXT,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_messages_task ON task_messages(task_id, id);
+
+CREATE TABLE IF NOT EXISTS thread_reads (
+  task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_read_id INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (task_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS announcements (

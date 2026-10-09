@@ -49,6 +49,7 @@ export default function Schedule() {
                               top: ((m.startMin - FIRST) / 60) * HOUR,
                               height: ((m.endMin - m.startMin) / 60) * HOUR - 3,
                               background: COLORS[codes.indexOf(m.code) % COLORS.length],
+                              "--i": d.meetings.indexOf(m),
                             }}
                             title={`${m.code} ${m.description} — ${m.instructor}`}
                           >
