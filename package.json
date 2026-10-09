@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "concurrently -k -n api,web -c blue,green \"npm:server\" \"npm:web\"",
     "web": "vite",
-    "server": "node --watch server/index.js",
+    "server": "node --env-file-if-exists=.env --watch server/index.js",
     "build": "vite build",
-    "start": "node server/index.js",
+    "start": "node --env-file-if-exists=.env server/index.js",
     "preview": "vite preview",
     "db:reset": "node -e \"require('fs').rmSync('server/data',{recursive:true,force:true})\" && node server/index.js",
     "lint": "oxlint"

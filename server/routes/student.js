@@ -18,6 +18,7 @@ import {
   UNREAD_IN_TASK,
   notify,
 } from '../util.js'
+import { FEATURES } from '../config.js'
 import { requireAuth } from './auth.js'
 
 const router = Router()
@@ -61,11 +62,92 @@ function gwaFor(studentId, excludeTermId) {
   return Math.round((rows.reduce((n, r) => n + r.point * r.units, 0) / units) * 100) / 100
 }
 
+// ---- pending tasks (service to-dos) ---------------------------------------------
+// Things the student still has to do with the school's services: clearance items, balance,
+// documents ready for pickup and the next enrollment step.
+function serviceTodos(studentId) {
+  const items = []
+  const { balance } = balanceFor(studentId)
+
+  for (const c of clearanceFor(studentId)) {
+    if (c.status === 'Cleared' || (c.office === 'Cashier' && balance > 0)) continue // balance has its own item
+    items.push({
+      id: `clearance-${c.id}`,
+      category: 'Clearance',
+      title: `${c.office}: ${c.requirement}`,
+      detail: c.remarks || (c.status === 'Hold' ? 'On hold — please visit the office.' : 'Requirement not yet completed.'),
+      severity: c.status === 'Hold' ? 'high' : 'medium',
+      dueDate: null,
+      link: '/clearance',
+      action: 'View clearance',
+    })
+  }
+
+  if (balance > 0) {
+    const next = db.prepare("SELECT due_on FROM payments WHERE student_id=? AND status='Due' ORDER BY due_on LIMIT 1").get(studentId)
+    const daysLeft = next ? (new Date(`${next.due_on}T00:00:00`) - Date.now()) / 86400000 : null
+    items.push({
+      id: 'balance',
+      category: 'Payment',
+      title: `Settle your remaining balance of ${peso(balance)}`,
+      detail: 'Pay at the Cashier. Your clearance and some documents depend on it.',
+      severity: daysLeft != null && daysLeft <= 7 ? 'high' : 'medium',
+      dueDate: next?.due_on ?? null,
+      link: '/account',
+      action: 'View account',
+    })
+  }
+
+  const ready = db
+    .prepare(
+      `SELECT r.id, d.name FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
+       WHERE r.student_id = ? AND r.status = 'Ready' ORDER BY r.updated_at`,
+    )
+    .all(studentId)
+  for (const r of ready)
+    items.push({
+      id: `document-${r.id}`,
+      category: 'Document',
+      title: `Pick up your ${r.name}`,
+      detail: `${reqNo(r.id)} is ready at the Registrar’s Office. Bring a valid school ID.`,
+      severity: 'medium',
+      dueDate: null,
+      link: '/documents',
+      action: 'View request',
+    })
+
+  const step = profile(studentId).enrollment_step
+  if (step < ENROLLMENT_STEPS.length)
+    items.push({
+      id: 'enrollment',
+      category: 'Enrollment',
+      title: `Enrollment: ${ENROLLMENT_STEPS[step]}`,
+      detail: 'This is the next step to complete your enrollment.',
+      severity: 'medium',
+      dueDate: null,
+      link: '/enrollment',
+      action: 'View enrollment',
+    })
+
+  const rank = { high: 0, medium: 1 }
+  return items.sort((a, b) => rank[a.severity] - rank[b.severity] || String(a.dueDate ?? '9').localeCompare(String(b.dueDate ?? '9')))
+}
+
+router.get('/todo', (req, res) => {
+  res.json({
+    term: termLabel(currentTerm()),
+    yearLevel: profile(req.user.id).year_level,
+    items: serviceTodos(req.user.id),
+  })
+})
+
 // ---- home -------------------------------------------------------------------
 router.get('/home', (req, res) => {
   const term = currentTerm()
   const me = profile(req.user.id)
-  const pendingTasks = db.prepare('SELECT COUNT(*) AS c FROM tasks WHERE student_id=? AND done=0').get(req.user.id).c
+  const pendingTasks = FEATURES.lms
+    ? db.prepare('SELECT COUNT(*) AS c FROM tasks WHERE student_id=? AND done=0').get(req.user.id).c
+    : serviceTodos(req.user.id).length
   const { balance } = balanceFor(req.user.id)
   const clearance = clearanceSummary(clearanceFor(req.user.id))
 

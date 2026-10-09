@@ -1,14 +1,29 @@
 # NU Laguna — Student & Registrar Information System
 
-A web app with three portals that share one database:
+A **services** web app — students and registrar staff getting school services done online. It is **not** a learning management system (LMS). Two portals share one database:
 
 - **SIS — Student Information System**: students view their subjects, schedule, grades, clearance and balance, and request school documents online.
 - **RIS — Registrar and Records Information System**: registrar staff manage the document queue, clearances, announcements and reports.
-- **FIS — Faculty Portal**: teachers post class activities and chat privately with students about them — a Google Classroom–style *private comments* feature with live, instant messaging.
+- *(Optional, off by default)* **Faculty Portal** with class activities and private task comments — LMS-style features that are outside the project scope. See [LMS extras](#optional-lms-extras-off-by-default).
 
 It was built from the Figma prototype, then polished: clearer typography, light/dark mode, a phone-friendly layout, and a full set of animations.
 
 **Stack:** React 19 + Vite · React Router · Express 5 · SQLite (Node's built-in `node:sqlite`) — no external database to install.
+
+---
+
+## Project scope and Scrum documents
+
+The scope is defined in [`docs/01-project-overview.md`](docs/01-project-overview.md). The project follows Scrum; the first-meeting documents are in [`docs/`](docs/):
+
+| Document | |
+| --- | --- |
+| [Project overview](docs/01-project-overview.md) | Problem, users, objective, expected output, scope |
+| [Scrum team and tools](docs/02-scrum-team-and-tools.md) | Roles, technical responsibilities, tools (to be filled in by the team) |
+| [Product backlog](docs/03-product-backlog.md) · [CSV](docs/product-backlog.csv) | Everything the system needs, with priorities and status |
+| [User stories](docs/04-user-stories.md) | Stories with acceptance criteria |
+| [Sprint plan and Definition of Done](docs/05-sprint-plan.md) | Sprint 1, goal, schedule, DoD |
+| [First meeting agenda](docs/06-meeting-1-agenda.md) | Checklist and notes |
 
 ---
 
@@ -90,8 +105,7 @@ The other students exist so the registrar side has realistic data (queue, cleara
 | --- | --- |
 | **Home** | Welcome banner, four at-a-glance tiles (next class, pending tasks, balance, clearance) and the announcements feed. |
 | **Subjects** | Every enrolled subject with units, instructor(s), days, times and rooms. |
-| **Pending Tasks** | Assignments with points and due dates (turns red when due soon). Mark as done / undo; filter Pending · Done · All. Each card has a **comment** button with a live unread badge; click a task for its details, instructions and the private chat with your teacher. |
-| **Messages** | Inbox of all your conversations with teachers, with unread counts, online dots and live updates. |
+| **Pending Tasks** | Your to-do list for the school's services, most urgent first: clearance items that are pending or on hold, your balance and due date, documents ready for pickup, and your next enrollment step. Each item links to the right page; filter by category. |
 | **Schedule** | Weekly Mon–Fri timetable, colour-coded per subject, with today highlighted. |
 | **Academic Tracker** | GWA, units earned/remaining, standing, progress per year level, current-subject averages. |
 | **Grades per Semester** | Pick any semester; see Prelim / Midterm / Finals, final point grade and remarks, plus the grade-range table and grading policy. |
@@ -101,7 +115,9 @@ The other students exist so the registrar side has realistic data (queue, cleara
 | **Account Summary** | Total assessment, paid, remaining balance, next due date, fee breakdown and payment history. |
 | **Settings** | Profile, light/dark theme, notification preferences, change password. |
 
-### Faculty portal (teachers)
+### Faculty portal (teachers) — optional, off by default
+
+> Outside the project scope (LMS-style). Enable it only if you want the extras — see [LMS extras](#optional-lms-extras-off-by-default).
 
 | Page | What you can do |
 | --- | --- |
@@ -139,7 +155,13 @@ The other students exist so the registrar side has realistic data (queue, cleara
 
 ---
 
-## Private comments (chat)
+## Optional LMS extras (off by default)
+
+The **Faculty portal**, **class activities** and the **private comments chat** below are LMS-style features. They are outside the project scope, so they are switched off: the login link, menu items and API routes do not exist unless you turn them on.
+
+To switch them on, copy `.env.example` to `.env`, set `ENABLE_LMS=true` and `VITE_ENABLE_LMS=true`, and restart `npm run dev`. With the switch off, **Pending Tasks** shows service to-dos; with it on, it shows teacher-posted activities instead.
+
+### Private comments (chat)
 
 Inspired by Google Classroom's *private comments*: every task has its own private conversation between **one student and the teacher who posted it**. Nobody else — not classmates, not the registrar — can read it.
 
@@ -326,6 +348,7 @@ Environment variables (all optional):
 | --- | --- | --- |
 | `API_PORT` | `3001` | Port for the API (and for the built app in production) |
 | `DB_FILE` | `server/data/nu-ssis.db` | Path to the SQLite file |
+| `ENABLE_LMS` / `VITE_ENABLE_LMS` | `false` | Turns on the optional LMS extras (server / website). Set both in `.env`. |
 
 If you change `API_PORT` during development, also update the proxy target in `vite.config.js`.
 

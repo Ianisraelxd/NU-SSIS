@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Logo } from '../components/icons.jsx'
 import { Modal } from '../components/ui.jsx'
+import { FEATURES } from '../config.js'
 import { useAuth } from '../lib/auth.jsx'
 
 const PORTALS = {
@@ -126,7 +127,9 @@ export default function Login({ role }) {
           <button type="button" onClick={() => setForgot(true)}>
             Forgot your password?
           </button>
-          {portal.others.map((o) => (
+          {portal.others
+            .filter((o) => FEATURES.lms || o.to !== '/teacher/login')
+            .map((o) => (
             <Link key={o.to} to={o.to}>
               {o.label}
             </Link>
