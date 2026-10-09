@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { randomBytes } from 'node:crypto'
 import { db } from '../db.js'
+import { FEATURES } from '../config.js'
 import { HttpError, hashPassword, verifyPassword } from '../util.js'
 
 const SESSION_DAYS = 7
@@ -51,6 +52,7 @@ router.post('/login', (req, res) => {
   throttle(req.ip)
   const { role, loginId, password } = req.body ?? {}
   if (!loginId || !password) throw new HttpError(400, 'Enter your ID and password.')
+  if (role === 'teacher' && !FEATURES.lms) throw new HttpError(401, 'Incorrect ID or password.')
   const user = db.prepare('SELECT * FROM users WHERE login_id = ? AND role = ?').get(String(loginId).trim(), role)
   if (!user || !verifyPassword(String(password), user.password_hash)) throw new HttpError(401, 'Incorrect ID or password.')
   const token = randomBytes(32).toString('hex')

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api.js'
+import { FEATURES } from '../config.js'
 import { useAuth } from './auth.jsx'
 
 const RealtimeContext = createContext({ unread: 0, connected: false, subscribe: () => () => {}, refreshUnread: () => {} })
@@ -17,7 +18,7 @@ export function useRealtimeEvents(handler) {
 
 export function RealtimeProvider({ children }) {
   const { user } = useAuth()
-  const enabled = !!user && (user.role === 'student' || user.role === 'teacher')
+  const enabled = FEATURES.lms && !!user && (user.role === 'student' || user.role === 'teacher')
   const listeners = useRef(new Set())
   const [unread, setUnread] = useState(0)
   const [connected, setConnected] = useState(false)

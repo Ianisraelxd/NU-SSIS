@@ -1,0 +1,34 @@
+ID,Epic,Item,Priority,Status,Notes
+PB-01,Accounts,Student login/logout,High,Done (prototype),Student number + password
+PB-02,Accounts,Registrar login/logout,High,Done (prototype),Employee ID + password
+PB-03,Accounts,User profile and settings,Medium,Done (prototype),Name/email/phone
+PB-04,Accounts,Change password,Medium,Done (prototype),Signs out other devices
+PB-05,Accounts,Password reset,Medium,Planned,Currently in person at the Registrar
+PB-06,Accounts,Admin user management (create/disable/import accounts),High,Planned,No admin role yet
+PB-07,Student services,View subjects and instructors,High,Done (prototype),
+PB-08,Student services,View weekly class schedule,High,Done (prototype),
+PB-09,Student services,View grades per semester with grading policy,High,Done (prototype),
+PB-10,Student services,Academic tracker (GWA/units/standing/progress),Medium,Done (prototype),
+PB-11,Student services,Enrollment progress and status,High,Done (prototype),View only
+PB-12,Student services,Self-service enrollment (registration/subject advising),High,Planned,Today the Registrar updates the step
+PB-13,Student services,E-clearance per office,High,Done (prototype),
+PB-14,Student services,Account summary (assessment/payments/balance),High,Done (prototype),
+PB-15,Student services,Online payment,Low,Planned,Needs a payment provider
+PB-16,Student services,Request documents and track status,High,Done (prototype),Clearance rules applied
+PB-17,Student services,Pending tasks (to-dos for clearance/payment/documents/enrollment),Medium,Done (prototype),
+PB-18,Student services,Notifications (bell) and announcements,Medium,Done (prototype),
+PB-19,Registrar,Queue management (first-come-first-served),High,Done (prototype),
+PB-20,Registrar,Document request management (search/filter/update),High,Done (prototype),
+PB-21,Registrar,Clearance management per office,High,Done (prototype),
+PB-22,Registrar,Post announcements,Medium,Done (prototype),
+PB-23,Registrar,Reports with CSV export and print,Medium,Done (prototype),
+PB-24,Registrar,Settings (term and document fees),Medium,Done (prototype),
+PB-25,Registrar,Generate document / receipt as PDF,Medium,Planned,
+PB-26,Registrar,Audit log (who changed what),Medium,Planned,
+PB-27,Platform,Database integration,High,Done (prototype),SQLite
+PB-28,Platform,Email/SMS notifications,Medium,Planned,"Setting exists, nothing is sent yet"
+PB-29,Platform,Automated tests,High,Planned,None exist yet
+PB-30,Platform,Light/dark mode and responsive layout,Low,Done (prototype),
+PB-31,Platform,Animations and polish,Low,Done (prototype),
+PB-32,Platform,Deployment guide / hosting,Medium,Planned,
+PB-33,Registrar,Queue number display / kiosk screen,Low,Planned,

@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
 import { ConfirmProvider, Loading, ToastProvider } from './components/ui.jsx'
+import { FEATURES } from './config.js'
 import { AuthProvider, useAuth } from './lib/auth.jsx'
 import { RealtimeProvider } from './lib/realtime.jsx'
 import Login from './pages/Login.jsx'
@@ -15,6 +16,7 @@ import StudentHome from './pages/student/Home.jsx'
 import StudentSchedule from './pages/student/Schedule.jsx'
 import StudentSubjects from './pages/student/Subjects.jsx'
 import StudentTasks from './pages/student/Tasks.jsx'
+import StudentTodo from './pages/student/Todo.jsx'
 import StudentTaskDetail from './pages/student/TaskDetail.jsx'
 import TeacherActivities from './pages/teacher/Activities.jsx'
 import TeacherActivityDetail from './pages/teacher/ActivityDetail.jsx'
@@ -32,7 +34,7 @@ const STUDENT_NAV = [
   { to: 'tasks', label: 'Pending Tasks' },
   { to: 'schedule', label: 'Schedule' },
   { to: 'tracker', label: 'Academic Tracker' },
-  { to: 'messages', label: 'Messages' },
+  ...(FEATURES.lms ? [{ to: 'messages', label: 'Messages' }] : []),
 ]
 const STUDENT_NAV_2 = [
   { to: 'grades', label: 'Grades per Semester' },
@@ -71,7 +73,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login role="student" />} />
       <Route path="/registrar/login" element={<Login role="registrar" />} />
-      <Route path="/teacher/login" element={<Login role="teacher" />} />
+      {FEATURES.lms && <Route path="/teacher/login" element={<Login role="teacher" />} />}
 
       <Route
         path="/"
@@ -83,9 +85,9 @@ function AppRoutes() {
       >
         <Route index element={<StudentHome />} />
         <Route path="subjects" element={<StudentSubjects />} />
-        <Route path="tasks" element={<StudentTasks />} />
-        <Route path="tasks/:id" element={<StudentTaskDetail />} />
-        <Route path="messages" element={<MessagesPage />} />
+        <Route path="tasks" element={FEATURES.lms ? <StudentTasks /> : <StudentTodo />} />
+        {FEATURES.lms && <Route path="tasks/:id" element={<StudentTaskDetail />} />}
+        {FEATURES.lms && <Route path="messages" element={<MessagesPage />} />}
         <Route path="schedule" element={<StudentSchedule />} />
         <Route path="tracker" element={<StudentTracker />} />
         <Route path="grades" element={<StudentGrades />} />
@@ -96,6 +98,7 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
       </Route>
 
+      {FEATURES.lms && (
       <Route
         path="/teacher"
         element={
@@ -110,6 +113,7 @@ function AppRoutes() {
         <Route path="messages" element={<MessagesPage />} />
         <Route path="settings" element={<Settings />} />
       </Route>
+      )}
 
       <Route
         path="/registrar"
