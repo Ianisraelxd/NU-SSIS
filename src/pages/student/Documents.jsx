@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Async, Badge, Card, Field, PageHead, Table, useToast } from '../../components/ui.jsx'
+import { Async, Badge, Card, Field, PageHead, Table, useConfirm, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { burst } from '../../lib/fx.js'
 import { fmtShort, peso, subtitle } from '../../lib/format.js'
@@ -11,6 +11,7 @@ const todayStr = () => new Date().toISOString().slice(0, 10)
 export default function Documents() {
   const state = useApi('/student/documents')
   const toast = useToast()
+  const confirm = useConfirm()
   const [form, setForm] = useState({ docTypeId: '', purpose: PURPOSES[0], copies: 1, pickupDate: '', remarks: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -36,7 +37,12 @@ export default function Documents() {
   }
 
   const cancel = async (r) => {
-    if (!window.confirm(`Cancel ${r.requestNo} (${r.document})?`)) return
+    const ok = await confirm({
+      title: 'Cancel this request?',
+      message: `${r.requestNo} (${r.document}) will be cancelled.`,
+      confirmLabel: 'Cancel request',
+    })
+    if (!ok) return
     try {
       await api.post(`/student/documents/requests/${r.id}/cancel`)
       toast('Request cancelled.')

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { MegaphoneIcon } from '../../components/icons.jsx'
-import { Async, Card, Field, Modal, Stat, useToast } from '../../components/ui.jsx'
+import { Async, Card, Field, Modal, Stat, useConfirm, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { fmtDate } from '../../lib/format.js'
 import { useApi } from '../../lib/hooks.js'
@@ -52,12 +52,18 @@ function AnnouncementForm({ initial, onClose, onSaved }) {
 
 export default function RegistrarHome() {
   const toast = useToast()
+  const confirm = useConfirm()
   const overview = useApi('/registrar/overview')
   const announcements = useApi('/announcements')
   const [editing, setEditing] = useState(null) // null | 'new' | announcement
 
   const remove = async (a) => {
-    if (!window.confirm(`Delete “${a.title}”?`)) return
+    const ok = await confirm({
+      title: 'Delete this announcement?',
+      message: `“${a.title}” will no longer be visible to students.`,
+      confirmLabel: 'Delete',
+    })
+    if (!ok) return
     try {
       await api.delete(`/registrar/announcements/${a.id}`)
       toast('Announcement deleted.')
