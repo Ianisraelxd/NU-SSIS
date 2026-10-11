@@ -1,34 +1,74 @@
-ID,Epic,Item,Priority,Status,Notes
-PB-01,Accounts,Student login/logout,High,Done (prototype),Student number + password
-PB-02,Accounts,Registrar login/logout,High,Done (prototype),Employee ID + password
-PB-03,Accounts,User profile and settings,Medium,Done (prototype),Name/email/phone
-PB-04,Accounts,Change password,Medium,Done (prototype),Signs out other devices
-PB-05,Accounts,Password reset,Medium,Planned,Currently in person at the Registrar
-PB-06,Accounts,Admin user management (create/disable/import accounts),High,Planned,No admin role yet
-PB-07,Student services,View subjects and instructors,High,Done (prototype),
-PB-08,Student services,View weekly class schedule,High,Done (prototype),
-PB-09,Student services,View grades per semester with grading policy,High,Done (prototype),
-PB-10,Student services,Academic tracker (GWA/units/standing/progress),Medium,Done (prototype),
-PB-11,Student services,Enrollment progress and status,High,Done (prototype),View only
-PB-12,Student services,Self-service enrollment (registration/subject advising),High,Planned,Today the Registrar updates the step
-PB-13,Student services,E-clearance per office,High,Done (prototype),
-PB-14,Student services,Account summary (assessment/payments/balance),High,Done (prototype),
-PB-15,Student services,Online payment,Low,Planned,Needs a payment provider
-PB-16,Student services,Request documents and track status,High,Done (prototype),Clearance rules applied
-PB-17,Student services,Pending tasks (to-dos for clearance/payment/documents/enrollment),Medium,Done (prototype),
-PB-18,Student services,Notifications (bell) and announcements,Medium,Done (prototype),
-PB-19,Registrar,Queue management (first-come-first-served),High,Done (prototype),
-PB-20,Registrar,Document request management (search/filter/update),High,Done (prototype),
-PB-21,Registrar,Clearance management per office,High,Done (prototype),
-PB-22,Registrar,Post announcements,Medium,Done (prototype),
-PB-23,Registrar,Reports with CSV export and print,Medium,Done (prototype),
-PB-24,Registrar,Settings (term and document fees),Medium,Done (prototype),
-PB-25,Registrar,Generate document / receipt as PDF,Medium,Planned,
-PB-26,Registrar,Audit log (who changed what),Medium,Planned,
-PB-27,Platform,Database integration,High,Done (prototype),SQLite
-PB-28,Platform,Email/SMS notifications,Medium,Planned,"Setting exists, nothing is sent yet"
-PB-29,Platform,Automated tests,High,Planned,None exist yet
-PB-30,Platform,Light/dark mode and responsive layout,Low,Done (prototype),
-PB-31,Platform,Animations and polish,Low,Done (prototype),
-PB-32,Platform,Deployment guide / hosting,Medium,Planned,
-PB-33,Registrar,Queue number display / kiosk screen,Low,Planned,
+ID,Module,Item,Priority,Status,Notes
+"SP-01","Student Portal","Student login / logout","High","Built","Student number + password; 5 wrong tries lock the account for 15 min"
+"SP-02","Student Portal","View and update basic student profile","Medium","Built","Name/email/phone; address and guardian contact. Academic details are read-only"
+"SP-03","Student Portal","View enrollment status and progress","High","Built","5-step tracker: Subject Selection → Department Review → Registrar Approval → Payment → Enrolled"
+"SP-04","Student Portal","Submit / select subjects for enrollment","High","Built","Unit cap from system settings; draft, submit, return-and-resubmit"
+"SP-05","Student Portal","View clearance requirements and status","High","Built","Six offices; the Cashier line follows the real balance"
+"SP-06","Student Portal","View grades per semester / subject","High","Built","Prelim, Midterm, Finals, final point grade, grade range and policy"
+"SP-07","Student Portal","Request school documents online","High","Built","See Document Request System (DR-01…DR-08)"
+"SP-08","Student Portal","Track document request status","High","Built","Status badge, history timeline, cancel while Pending / For Payment"
+"SP-09","Student Portal","View payment status and transactions","High","Built","Assessment, fees, payments with OR numbers, document fee payments, next due date"
+"SP-10","Student Portal","Receive system notifications and announcements","Medium","Built","Bell notifications for every status change; announcements on Home"
+"SP-11","Student Portal","Subjects, schedule, academic tracker and pending tasks","Medium","Built","From the Figma prototype; Pending Tasks lists service to-dos"
+"RG-01","Registrar Module","Manage student records","High","Built","Add / edit students (one-time password for new accounts)"
+"RG-02","Registrar Module","Verify and approve enrollment","High","Built","Approval needs verified records; approving creates the student's subject list"
+"RG-03","Registrar Module","Manage subjects and class schedules","High","Built","Offer / hide subjects; room and instructor conflict detection"
+"RG-04","Registrar Module","Manage student grades / grade records","High","Built","Grade entry per subject with 0–100 validation; students are notified"
+"RG-05","Registrar Module","Process document requests","High","Built","Approve, mark ready, release; approve-next-pending shortcut"
+"RG-06","Registrar Module","Update document request status","High","Built","Steps cannot be skipped; every change is logged and notified"
+"RG-07","Registrar Module","Verify student academic information","Medium","Built","Verify action on each record; enrollment approval requires it"
+"RG-08","Registrar Module","View enrollment records and reports","Medium","Built","Enrollment list by status; document, clearance, enrollment and queue reports with CSV/print"
+"RG-09","Registrar Module","Manage clearance lines (library, laboratory, guidance, registrar)","High","Built","Cashier and Department lines are owned by those modules"
+"RG-10","Registrar Module","Post announcements","Medium","Built","Students are notified"
+"CS-01","Cashier Module","View student payment information","High","Built","Assessed, paid, balance and % paid per student"
+"CS-02","Cashier Module","Record and verify payments","High","Built","Amount cannot exceed the balance; method and OR number captured"
+"CS-03","Cashier Module","Manage student balances / fees","High","Built","Add, edit, remove fee lines; the ""Due"" line always equals the balance"
+"CS-04","Cashier Module","Update payment status","Medium","Built","Void a receipt with a reason; balance goes back up"
+"CS-05","Cashier Module","Issue / record official receipt information","High","Built","Auto-numbered OR, no duplicates, printable receipt"
+"CS-06","Cashier Module","Confirm payment for enrollment or document requests","High","Built","Enrollment needs the minimum % paid; documents need the exact fee"
+"CS-07","Cashier Module","Generate payment / collection reports","Medium","Built","By period; tuition vs document fees; by payment method; CSV and print"
+"DP-01","Department Module","View students under the department","High","Built","Scoped to the staff member's own department"
+"DP-02","Department Module","Review enrollment / subject requests","High","Built","Approve (sends to Registrar) or return with a reason"
+"DP-03","Department Module","Approve or reject department-related clearance","High","Built","Approve / Pending / Hold; cannot clear while requirements are unverified"
+"DP-04","Department Module","Manage / verify academic requirements","Medium","Built","Add, verify, mark missing, remove requirements per student"
+"DP-05","Department Module","View student grades when authorized","Medium","Built","Own-department students only; every view is written to the audit log"
+"DP-06","Department Module","Monitor students' clearance status","Medium","Built","All six offices shown read-only"
+"AD-01","Admin Module","Manage user accounts","High","Built","Create staff accounts, edit, disable / enable, unlock, reset password (one-time temp password)"
+"AD-02","Admin Module","Assign user roles and permissions","High","Partly built","Roles can be assigned and changed; permissions are fixed per module and shown in a matrix. Custom per-user permissions are not built"
+"AD-03","Admin Module","Manage departments and programs","Medium","Built","Cannot delete a department that still has students or staff"
+"AD-04","Admin Module","Manage system settings","Medium","Built","School name, max units, minimum payment %, default queue minutes, max copies — validated"
+"AD-05","Admin Module","Manage academic year / semester","Medium","Built","Add terms and set the current one"
+"AD-06","Admin Module","Monitor system activities","Medium","Built","Dashboard: accounts, locked / disabled, failed sign-ins (24 h), open requests, queue, collections"
+"AD-07","Admin Module","View system-wide reports","Medium","Built","System summary plus every module's reports"
+"AD-08","Admin Module","Maintain audit / activity logs","High","Built","Who did what and when; searchable and filterable"
+"AD-09","Admin Module","Manage announcements","Medium","Built","Same editor as the Registrar"
+"DR-01","Document Request System","Select a document (Transcript of Records, Certificate of Enrollment, Certificate of Grades, others)","High","Built","Seven document types; the Registrar can change the list and fees"
+"DR-02","Document Request System","Submit document requests online","High","Built","Purpose, copies, pickup date; rejects past dates, bad copy counts and duplicate open requests"
+"DR-03","Document Request System","Show document requirements and corresponding fees","High","Built","Requirements and fee are shown while choosing; Transcript and Diploma need a cleared E-Clearance"
+"DR-04","Document Request System","Registrar approves / processes requests","High","Built","Approve → For Payment (or straight to Processing when free)"
+"DR-05","Document Request System","Cashier verifies payment","High","Built","Exact fee required; official receipt issued; moves to Processing"
+"DR-06","Document Request System","Track status: Pending → For Payment → Processing → Ready for Release → Released","High","Built","Enforced on the server; cannot skip a step"
+"DR-07","Document Request System","Notify students when documents are ready","Medium","Built","A notification at every step, including ""ready for release"""
+"DR-08","Document Request System","Maintain document request history","Medium","Built","request_history: status, note, who, when"
+"QU-01","Digital Queue","Register queue entry (join a queue by office and service)","High","Built","Registrar, Cashier or the student's Department; one active ticket at a time"
+"QU-02","Digital Queue","Generate queue number","High","Built","R-001, C-001, D-001 … restarting every day"
+"QU-03","Digital Queue","Monitor queue status (position, estimated wait, now serving)","High","Built","Live: refreshes every few seconds; estimate uses the real average service time"
+"QU-04","Digital Queue","Notify the student","High","Built","When called, when 3 numbers away, and when skipped"
+"QU-05","Digital Queue","Manage queue — call next, with counter assignment","High","Built","First come first served; staff name their counter"
+"QU-06","Digital Queue","Update queue status (serving, done, skipped, cancelled)","High","Built","A ticket can only be finished by the staff member serving it"
+"QU-07","Digital Queue","Generate queue reports and analytics","Medium","Built","Tickets, served, average wait and service time, per office and service"
+"SQ-01","Security & Quality","Password hashing and session expiry","High","Built","scrypt with per-user salt; sessions last 7 days; password change signs out other devices"
+"SQ-02","Security & Quality","Brute-force protection","High","Built","Account lock after 5 failures (15 min) + per-IP throttle on failed sign-ins"
+"SQ-03","Security & Quality","Rate limiting","High","Built","600 requests / minute / IP on the API (configurable)"
+"SQ-04","Security & Quality","SQL-injection protection","High","Built","Every query is parameterised"
+"SQ-05","Security & Quality","Role-based access control","High","Built","Each module accepts only its role; department data scoped by department"
+"SQ-06","Security & Quality","Automated tests (unit, integration, security) and a load-test script","High","Built","60 tests: npm test. Load test: scripts/perf.mjs"
+"SQ-07","Security & Quality","Light / dark mode, responsive layout, accessible UI","Low","Built","Keyboard navigation, focus rings, reduced-motion support"
+"PL-01","Planned","Live deployment (public URL)","High","Planned","Required by the paper (Task 6). See docs/11-deployment.md"
+"PL-02","Planned","Email / SMS notifications","Medium","Planned","The preference switch exists; nothing is sent yet"
+"PL-03","Planned","Self-service password reset","Medium","Planned","Today the Administrator resets passwords"
+"PL-04","Planned","Online payment gateway","Low","Planned","Needs a payment provider"
+"PL-05","Planned","PDF generation of documents and receipts","Medium","Planned","Receipts print from the browser today"
+"PL-06","Planned","Custom per-user permissions","Low","Planned","See AD-02"
+"PL-07","Planned","Bulk import of students and subjects (CSV)","Medium","Planned",""
+"PL-08","Planned","Queue display screen / SMS number alerts","Low","Planned",""

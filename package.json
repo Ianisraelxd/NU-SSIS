@@ -11,7 +11,8 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "preview": "vite preview",
     "db:reset": "node -e \"require('fs').rmSync('server/data',{recursive:true,force:true})\" && node server/index.js",
-    "lint": "oxlint"
+    "lint": "oxlint",
+    "test": "node --test tests/"
   },
   "dependencies": {
     "express": "^5.2.1",

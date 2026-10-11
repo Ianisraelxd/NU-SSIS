@@ -9,6 +9,10 @@ import authRoutes from './routes/auth.js'
 import commonRoutes from './routes/common.js'
 import studentRoutes from './routes/student.js'
 import registrarRoutes from './routes/registrar.js'
+import cashierRoutes from './routes/cashier.js'
+import departmentRoutes from './routes/department.js'
+import adminRoutes from './routes/admin.js'
+import queueRoutes from './routes/queue.js'
 import teacherRoutes from './routes/teacher.js'
 import { messagesRouter, streamRouter } from './routes/messages.js'
 
@@ -16,11 +20,40 @@ if (seedIfEmpty()) console.log('Database was empty — loaded demo data.')
 
 const app = express()
 app.disable('x-powered-by')
+
+// ---- security hardening --------------------------------------------------------------------------
+app.use((req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'same-origin',
+    'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+  })
+  if (req.path.startsWith('/api')) res.set('Cache-Control', 'no-store') // never cache personal data
+  next()
+})
+
+// general rate limit per IP (the login route has its own, stricter limits)
+const hits = new Map()
+const WINDOW_MS = 60_000
+const MAX_REQUESTS = Number(process.env.RATE_LIMIT) || 600 // requests per minute per IP
+setInterval(() => hits.clear(), WINDOW_MS).unref()
+app.use('/api', (req, res, next) => {
+  const n = (hits.get(req.ip) ?? 0) + 1
+  hits.set(req.ip, n)
+  if (n > MAX_REQUESTS) return res.status(429).json({ error: 'Too many requests. Please slow down.' })
+  next()
+})
+
 app.use(express.json({ limit: '100kb' }))
 
 app.use('/api/auth', authRoutes)
 app.use('/api/student', studentRoutes)
 app.use('/api/registrar', registrarRoutes)
+app.use('/api/cashier', cashierRoutes)
+app.use('/api/department', departmentRoutes)
+app.use('/api/admin', adminRoutes)
+app.use('/api/queue', queueRoutes)
 if (FEATURES.lms) {
   app.use('/api/teacher', teacherRoutes)
   app.use('/api/stream', streamRouter)
@@ -33,6 +66,13 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }))
 // Serve the built React app when it exists (npm run build && npm start)
 const dist = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 if (existsSync(dist)) {
+  app.use((_req, res, next) => {
+    res.set(
+      'Content-Security-Policy',
+      "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'",
+    )
+    next()
+  })
   app.use(express.static(dist))
   app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(join(dist, 'index.html')))
 }

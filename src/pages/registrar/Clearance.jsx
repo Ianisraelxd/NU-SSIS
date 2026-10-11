@@ -1,15 +1,20 @@
 import { useState } from 'react'
-import { Async, Badge, Card, Field, Modal, PageHead, Table, useToast } from '../../components/ui.jsx'
+import { Async, Badge, Card, Modal, PageHead, Table, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { peso } from '../../lib/format.js'
-import { useApi } from '../../lib/hooks.js'
+import { useApi, useDebounced } from '../../lib/hooks.js'
+
+const MANAGED_ELSEWHERE = {
+  Cashier: 'Follows the student’s balance (Cashier module)',
+  'Department Head': 'Approved by the student’s department',
+}
 
 function OfficeRow({ row, onSaved }) {
   const toast = useToast()
   const [status, setStatus] = useState(row.status)
   const [remarks, setRemarks] = useState(row.remarks ?? '')
   const [busy, setBusy] = useState(false)
-  const locked = row.office === 'Cashier'
+  const locked = row.office in MANAGED_ELSEWHERE
   const dirty = status !== row.status || (remarks || '') !== (row.remarks ?? '')
 
   const save = async () => {
@@ -45,7 +50,7 @@ function OfficeRow({ row, onSaved }) {
       </td>
       <td>
         {locked ? (
-          <span className="muted">{row.remarks ?? 'Follows balance'}</span>
+          <span className="muted">{row.remarks ?? MANAGED_ELSEWHERE[row.office]}</span>
         ) : (
           <input
             className="input"
@@ -69,30 +74,13 @@ function OfficeRow({ row, onSaved }) {
 }
 
 function StudentModal({ id, onClose, onChanged }) {
-  const toast = useToast()
   const state = useApi(`/registrar/clearance/${id}`)
-  const [stepDraft, setStep] = useState(null)
-  const step = stepDraft ?? state.data?.student.step ?? 0
-
-  const saveStep = async () => {
-    try {
-      await api.put(`/registrar/students/${id}/enrollment`, { step: Number(step) })
-      toast('Enrollment progress updated.')
-      setStep(null)
-      state.reload()
-      onChanged()
-    } catch (e) {
-      toast(e.message, 'error')
-    }
-  }
-
   const refresh = () => {
     state.reload()
     onChanged()
   }
-
   return (
-    <Modal title={state.data ? `${state.data.student.name} · ${state.data.student.studentNo}` : 'Student clearance'} onClose={onClose}>
+    <Modal title={state.data ? `${state.data.student.name} · ${state.data.student.studentNo}` : 'Student clearance'} wide onClose={onClose}>
       <Async state={state}>
         {(d) => (
           <div className="stack" style={{ gap: 20 }}>
@@ -103,6 +91,8 @@ function StudentModal({ id, onClose, onChanged }) {
               </dd>
               <dt>Balance</dt>
               <dd>{peso(d.student.balance)}</dd>
+              <dt>Enrollment</dt>
+              <dd>{d.student.enrollment}</dd>
               <dt>Clearance</dt>
               <dd>
                 {d.summary.cleared} of {d.summary.total} cleared
@@ -125,21 +115,6 @@ function StudentModal({ id, onClose, onChanged }) {
                 </tbody>
               </table>
             </div>
-            <Field label="Enrollment progress" htmlFor="enr-step" help="Moves the student’s enrollment stepper.">
-              <div className="toolbar">
-                <select id="enr-step" className="select" value={step ?? 0} onChange={(e) => setStep(e.target.value)}>
-                  <option value={0}>Not started</option>
-                  {d.student.steps.map((s, i) => (
-                    <option key={s} value={i + 1}>
-                      {s} done
-                    </option>
-                  ))}
-                </select>
-                <button className="btn small" onClick={saveStep} disabled={Number(step) === d.student.step}>
-                  Update
-                </button>
-              </div>
-            </Field>
           </div>
         )}
       </Async>
@@ -150,13 +125,13 @@ function StudentModal({ id, onClose, onChanged }) {
 export default function Clearance() {
   const [filters, setFilters] = useState({ q: '', status: 'all' })
   const [openId, setOpenId] = useState(null)
-  const query = new URLSearchParams({ status: filters.status, q: filters.q }).toString()
-  const state = useApi(`/registrar/clearance?${query}`)
+  const q = useDebounced(filters.q)
+  const state = useApi(`/registrar/clearance?${new URLSearchParams({ status: filters.status, q })}`)
   const set = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }))
 
   return (
     <>
-      <PageHead title="Clearance Status" subtitle="Review and update each student’s clearance per office." />
+      <PageHead title="Clearance Status" subtitle="Review each student’s clearance per office. Library, Laboratory, Guidance and Registrar lines are set here." />
       <div className="stack">
         <div className="toolbar" role="search">
           <label className="sr-only" htmlFor="cl-search">

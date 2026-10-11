@@ -1,5 +1,5 @@
 import { Async, Badge, Card, PageHead, Stat, Table } from '../../components/ui.jsx'
-import { fmtDate, fmtShort, peso, subtitle } from '../../lib/format.js'
+import { fmtDate, fmtDateTime, fmtShort, peso, subtitle } from '../../lib/format.js'
 import { useApi } from '../../lib/hooks.js'
 
 export default function Account() {
@@ -40,11 +40,25 @@ export default function Account() {
               <Table
                 columns={[
                   { key: 'dueOn', label: 'Date', render: (r) => fmtShort(r.dueOn) },
-                  { key: 'reference', label: 'Reference', render: (r) => r.reference ?? '—' },
+                  { key: 'reference', label: 'Official receipt', render: (r) => r.reference ?? '—' },
+                  { key: 'method', label: 'Method', render: (r) => r.method ?? '—' },
                   { key: 'amount', label: 'Amount', align: 'num', render: (r) => peso(r.amount) },
                   { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
                 ]}
                 rows={d.payments}
+              />
+            </Card>
+            <Card title="Document fee payments" sub="Fees you paid at the Cashier for document requests" flush>
+              <Table
+                empty="No document payments yet."
+                columns={[
+                  { key: 'requestNo', label: 'Request', render: (r) => <span className="mono">{r.requestNo}</span> },
+                  { key: 'document', label: 'Document' },
+                  { key: 'orNumber', label: 'Official receipt' },
+                  { key: 'paidAt', label: 'Paid', render: (r) => fmtDateTime(r.paidAt) },
+                  { key: 'amount', label: 'Amount', align: 'num', render: (r) => peso(r.amount) },
+                ]}
+                rows={d.documentPayments}
               />
             </Card>
           </div>

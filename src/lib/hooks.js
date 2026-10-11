@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from './api.js'
 
 // Fetch `path` on mount / when it changes. `reload()` refetches without flashing the spinner.
@@ -30,4 +30,26 @@ export function useApi(path) {
   }, [path])
 
   return { ...state, reload: () => load(true), retry: () => load(false) }
+}
+
+// Value that only updates after the user stops typing for `ms` (for search boxes).
+export function useDebounced(value, ms = 250) {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return v
+}
+
+// Re-run `fn` every `ms` while the page is open and visible (used for the live queue).
+export function usePolling(fn, ms) {
+  const latest = useRef(fn)
+  useEffect(() => {
+    latest.current = fn
+  })
+  useEffect(() => {
+    const id = setInterval(() => !document.hidden && latest.current(), ms)
+    return () => clearInterval(id)
+  }, [ms])
 }

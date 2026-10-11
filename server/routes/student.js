@@ -1,22 +1,29 @@
 import { Router } from 'express'
-import { db } from '../db.js'
+import { db, transaction } from '../db.js'
 import {
+  DOC_OPEN,
   ENROLLMENT_STEPS,
   GRADE_SCALE,
   HttpError,
+  UNREAD_IN_TASK,
+  audit,
   balanceFor,
   clearanceFor,
   clearanceSummary,
   currentTerm,
+  enrollmentState,
+  getNumber,
   gradeRow,
+  localDate,
+  logRequest,
+  notify,
+  notifyRoles,
   nowIso,
-  notifyRegistrars,
+  paidPercent,
   peso,
   reqNo,
   scaleFor,
   termLabel,
-  UNREAD_IN_TASK,
-  notify,
 } from '../util.js'
 import { FEATURES } from '../config.js'
 import { requireAuth } from './auth.js'
@@ -62,12 +69,71 @@ function gwaFor(studentId, excludeTermId) {
   return Math.round((rows.reduce((n, r) => n + r.point * r.units, 0) / units) * 100) / 100
 }
 
+// ---- profile -----------------------------------------------------------------------
+router.get('/profile', (req, res) => {
+  const me = db
+    .prepare(
+      `SELECT s.program, s.year_level AS yearLevel, s.section, s.standing, s.address, s.guardian_name AS guardianName,
+              s.guardian_phone AS guardianPhone, s.verified_at AS verifiedAt, d.code AS departmentCode, d.name AS departmentName
+       FROM students s LEFT JOIN departments d ON d.id = s.department_id WHERE s.user_id = ?`,
+    )
+    .get(req.user.id)
+  res.json({ ...me, verified: !!me.verifiedAt })
+})
+
+router.put('/profile', (req, res) => {
+  const clean = (v, max) => String(v ?? '').trim().slice(0, max) || null
+  const phone = clean(req.body?.guardianPhone, 20)
+  if (phone && !/^[0-9+()\-\s]{7,20}$/.test(phone)) throw new HttpError(400, 'Enter a valid contact number.')
+  db.prepare('UPDATE students SET address = ?, guardian_name = ?, guardian_phone = ? WHERE user_id = ?').run(
+    clean(req.body?.address, 200),
+    clean(req.body?.guardianName, 80),
+    phone,
+    req.user.id,
+  )
+  res.json({ ok: true })
+})
+
 // ---- pending tasks (service to-dos) ---------------------------------------------
-// Things the student still has to do with the school's services: clearance items, balance,
-// documents ready for pickup and the next enrollment step.
+// Things the student still has to do with the school's services.
 function serviceTodos(studentId) {
   const items = []
   const { balance } = balanceFor(studentId)
+  const enroll = enrollmentState(studentId)
+
+  if (enroll.status === 'Returned')
+    items.push({
+      id: 'enrollment-returned',
+      category: 'Enrollment',
+      title: 'Fix and resubmit your enrollment',
+      detail: enroll.request?.remarks || 'Your subjects were returned for changes.',
+      severity: 'high',
+      dueDate: null,
+      link: '/enrollment',
+      action: 'Edit subjects',
+    })
+  else if (enroll.step === 0)
+    items.push({
+      id: 'enrollment',
+      category: 'Enrollment',
+      title: 'Select your subjects for enrollment',
+      detail: 'Choose your subjects and submit them for department review.',
+      severity: 'medium',
+      dueDate: null,
+      link: '/enrollment',
+      action: 'Select subjects',
+    })
+  else if (enroll.step === 3)
+    items.push({
+      id: 'enrollment-payment',
+      category: 'Enrollment',
+      title: 'Enrollment: payment',
+      detail: 'Your subjects are approved. The Cashier confirms your enrollment once the minimum payment is made.',
+      severity: 'medium',
+      dueDate: null,
+      link: '/enrollment',
+      action: 'View enrollment',
+    })
 
   for (const c of clearanceFor(studentId)) {
     if (c.status === 'Cleared' || (c.office === 'Cashier' && balance > 0)) continue // balance has its own item
@@ -98,36 +164,36 @@ function serviceTodos(studentId) {
     })
   }
 
-  const ready = db
+  const docs = db
     .prepare(
-      `SELECT r.id, d.name FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
-       WHERE r.student_id = ? AND r.status = 'Ready' ORDER BY r.updated_at`,
+      `SELECT r.id, r.status, r.total_fee AS fee, d.name FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
+       WHERE r.student_id = ? AND r.status IN ('For Payment','Ready for Release') ORDER BY r.updated_at`,
     )
     .all(studentId)
-  for (const r of ready)
-    items.push({
-      id: `document-${r.id}`,
-      category: 'Document',
-      title: `Pick up your ${r.name}`,
-      detail: `${reqNo(r.id)} is ready at the Registrar’s Office. Bring a valid school ID.`,
-      severity: 'medium',
-      dueDate: null,
-      link: '/documents',
-      action: 'View request',
-    })
-
-  const step = profile(studentId).enrollment_step
-  if (step < ENROLLMENT_STEPS.length)
-    items.push({
-      id: 'enrollment',
-      category: 'Enrollment',
-      title: `Enrollment: ${ENROLLMENT_STEPS[step]}`,
-      detail: 'This is the next step to complete your enrollment.',
-      severity: 'medium',
-      dueDate: null,
-      link: '/enrollment',
-      action: 'View enrollment',
-    })
+  for (const r of docs)
+    items.push(
+      r.status === 'For Payment'
+        ? {
+            id: `document-pay-${r.id}`,
+            category: 'Payment',
+            title: `Pay ${peso(r.fee)} for your ${r.name}`,
+            detail: `${reqNo(r.id)} was approved. Pay at the Cashier so the Registrar can start processing it.`,
+            severity: 'medium',
+            dueDate: null,
+            link: '/documents',
+            action: 'View request',
+          }
+        : {
+            id: `document-${r.id}`,
+            category: 'Document',
+            title: `Pick up your ${r.name}`,
+            detail: `${reqNo(r.id)} is ready for release at the Registrar’s Office. Bring a valid school ID.`,
+            severity: 'medium',
+            dueDate: null,
+            link: '/documents',
+            action: 'View request',
+          },
+    )
 
   const rank = { high: 0, medium: 1 }
   return items.sort((a, b) => rank[a.severity] - rank[b.severity] || String(a.dueDate ?? '9').localeCompare(String(b.dueDate ?? '9')))
@@ -150,6 +216,10 @@ router.get('/home', (req, res) => {
     : serviceTodos(req.user.id).length
   const { balance } = balanceFor(req.user.id)
   const clearance = clearanceSummary(clearanceFor(req.user.id))
+  const enroll = enrollmentState(req.user.id)
+  const ticket = db
+    .prepare(`SELECT number, office, status FROM queue_tickets WHERE student_id = ? AND queue_date = ? AND status IN ('Waiting','Serving') ORDER BY id DESC LIMIT 1`)
+    .get(req.user.id, localDate())
 
   // next class (today first, otherwise the next day with a class)
   const meetings = meetingsFor(req.user.id, term.id)
@@ -168,6 +238,8 @@ router.get('/home', (req, res) => {
     pendingTasks,
     balance,
     clearance,
+    enrollment: { status: enroll.status, step: enroll.step },
+    ticket: ticket ?? null,
     nextClass: next,
   })
 })
@@ -199,7 +271,7 @@ router.get('/schedule', (req, res) => {
   })
 })
 
-// ---- pending tasks ------------------------------------------------------------
+// ---- optional LMS extras: class activities (only reachable when ENABLE_LMS=true) ---------------------
 const TASK_SELECT = `
   SELECT t.id, a.title, a.kind, a.points, a.due_at AS dueAt, a.instructions, t.done, t.done_at AS doneAt,
          s.code, s.description, a.teacher_id AS teacherId, COALESCE(u.name, 'Teacher') AS instructor,
@@ -290,7 +362,7 @@ router.get('/grades', (req, res) => {
     .all(req.user.id)
     .map((t) => ({ id: t.id, label: termLabel(t), isCurrent: !!t.is_current }))
   const termId = Number(req.query.term) || current.id
-  const selected = terms.find((t) => t.id === termId) ?? terms[0]
+  const selected = terms.find((t) => t.id === termId) ?? terms[0] ?? { id: current.id, label: termLabel(current), isCurrent: true }
   const rows = db
     .prepare(
       `SELECT s.code, s.description, s.units, ss.prelim, ss.midterm, ss.finals
@@ -303,7 +375,7 @@ router.get('/grades', (req, res) => {
   const units = graded.reduce((n, r) => n + r.units, 0)
   res.json({
     yearLevel: profile(req.user.id).year_level,
-    terms,
+    terms: terms.length ? terms : [selected],
     term: selected,
     rows,
     semesterGwa: units && graded.length === rows.length ? Math.round((graded.reduce((n, r) => n + r.point * r.units, 0) / units) * 100) / 100 : null,
@@ -312,21 +384,75 @@ router.get('/grades', (req, res) => {
 })
 
 // ---- enrollment -------------------------------------------------------------------
+// Student selects subjects → Department reviews → Registrar approves → Cashier confirms payment.
+function availableSubjects(studentId) {
+  const dept = profile(studentId).department_id
+  return db
+    .prepare(
+      `SELECT id, code, description, units, year_level AS yearLevel FROM subjects
+       WHERE offered = 1 AND (department_id IS NULL OR department_id = ?) ORDER BY code`,
+    )
+    .all(dept)
+}
+
 router.get('/enrollment', (req, res) => {
   const term = currentTerm()
   const me = profile(req.user.id)
-  const units = currentSubjects(req.user.id, term.id).reduce((n, s) => n + s.units, 0)
-  const step = me.enrollment_step
+  const st = enrollmentState(req.user.id)
+  const selected = st.request ? db.prepare('SELECT subject_id AS id FROM enrollment_items WHERE request_id = ?').all(st.request.id).map((r) => r.id) : []
+  const available = availableSubjects(req.user.id)
+  const approvedUnits = currentSubjects(req.user.id, term.id).reduce((n, s) => n + s.units, 0)
+  const pickedUnits = available.filter((s) => selected.includes(s.id)).reduce((n, s) => n + s.units, 0)
   res.json({
     term: termLabel(term),
     yearLevel: me.year_level,
-    status: step >= ENROLLMENT_STEPS.length ? 'Enrolled' : step === 0 ? 'Not Started' : 'In Progress',
+    status: st.status,
     section: me.section,
-    units,
-    step,
+    units: st.request?.status === 'Approved' ? approvedUnits : pickedUnits,
+    step: st.step,
     steps: ENROLLMENT_STEPS,
-    nextStep: ENROLLMENT_STEPS[step] ?? 'None',
+    nextStep: ENROLLMENT_STEPS[st.step] ?? 'None',
+    request: st.request && { status: st.request.status, remarks: st.request.remarks, submittedAt: st.request.submitted_at },
+    selected,
+    available,
+    canEdit: !st.request || ['Draft', 'Returned'].includes(st.request.status),
+    maxUnits: getNumber('maxUnits'),
+    payment: { percent: paidPercent(req.user.id), minPercent: getNumber('minPaymentPercent'), balance: balanceFor(req.user.id).balance },
   })
+})
+
+router.put('/enrollment', (req, res) => {
+  const term = currentTerm()
+  const st = enrollmentState(req.user.id)
+  if (st.request && !['Draft', 'Returned'].includes(st.request.status))
+    throw new HttpError(409, 'Your subjects were already submitted. They can only be changed if they are returned to you.')
+
+  const ids = [...new Set((Array.isArray(req.body?.subjectIds) ? req.body.subjectIds : []).map(Number))]
+  const available = availableSubjects(req.user.id)
+  const chosen = ids.map((id) => available.find((s) => s.id === id))
+  if (chosen.some((s) => !s)) throw new HttpError(400, 'One of the selected subjects is not open for your program.')
+  const units = chosen.reduce((n, s) => n + s.units, 0)
+  const max = getNumber('maxUnits')
+  if (units > max) throw new HttpError(400, `You can enroll in at most ${max} units (you picked ${units}).`)
+  const submit = !!req.body?.submit
+  if (submit && !ids.length) throw new HttpError(400, 'Pick at least one subject before submitting.')
+
+  transaction(() => {
+    let request = st.request
+    if (!request)
+      request = db.prepare("INSERT INTO enrollment_requests (student_id, term_id, status) VALUES (?,?,'Draft') RETURNING *").get(req.user.id, term.id)
+    db.prepare('DELETE FROM enrollment_items WHERE request_id = ?').run(request.id)
+    const insert = db.prepare('INSERT INTO enrollment_items (request_id, subject_id) VALUES (?,?)')
+    for (const id of ids) insert.run(request.id, id)
+    if (submit) {
+      db.prepare("UPDATE enrollment_requests SET status = 'For Department Review', remarks = NULL, submitted_at = ? WHERE id = ?").run(nowIso(), request.id)
+    }
+  })
+  if (submit) {
+    notifyRoles('department', `${req.user.name} submitted ${ids.length} subject${ids.length === 1 ? '' : 's'} for enrollment review.`, '/department/enrollment', profile(req.user.id).department_id)
+    audit(req.user, 'enrollment.submit', 'enrollment', req.user.login_id, `${ids.length} subjects, ${units} units`)
+  }
+  res.json({ ok: true, submitted: submit, units })
 })
 
 // ---- e-clearance --------------------------------------------------------------------
@@ -343,25 +469,33 @@ router.get('/clearance', (req, res) => {
 // ---- documents & forms -----------------------------------------------------------------
 const requestSelect = `
   SELECT r.id, r.status, r.copies, r.purpose, r.remarks, r.total_fee AS totalFee,
-         r.pickup_date AS pickupDate, r.created_at AS createdAt, d.name AS document
+         r.pickup_date AS pickupDate, r.created_at AS createdAt, r.or_number AS orNumber, r.paid_at AS paidAt,
+         d.name AS document
   FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id`
 
 router.get('/documents', (req, res) => {
   const clearance = clearanceSummary(clearanceFor(req.user.id))
   const types = db
-    .prepare('SELECT id, name, fee, requires_clearance AS requiresClearance FROM doc_types WHERE active=1 ORDER BY id')
+    .prepare('SELECT id, name, fee, requirements, requires_clearance AS requiresClearance FROM doc_types WHERE active=1 ORDER BY id')
     .all()
     .map((t) => ({ ...t, requiresClearance: !!t.requiresClearance }))
   const requests = db
     .prepare(`${requestSelect} WHERE r.student_id=? ORDER BY r.created_at DESC, r.id DESC`)
     .all(req.user.id)
     .map((r) => ({ ...r, requestNo: reqNo(r.id) }))
+  const history = db
+    .prepare(
+      `SELECT request_id AS requestId, status, note, created_at AS createdAt FROM request_history
+       WHERE request_id IN (SELECT id FROM doc_requests WHERE student_id = ?) ORDER BY id`,
+    )
+    .all(req.user.id)
   res.json({
     term: termLabel(currentTerm()),
     yearLevel: profile(req.user.id).year_level,
     clearance,
+    maxCopies: getNumber('maxCopies'),
     types,
-    requests,
+    requests: requests.map((r) => ({ ...r, history: history.filter((h) => h.requestId === r.id) })),
   })
 })
 
@@ -370,15 +504,15 @@ router.post('/documents/requests', (req, res) => {
   const type = db.prepare('SELECT * FROM doc_types WHERE id=? AND active=1').get(docTypeId)
   if (!type) throw new HttpError(400, 'Choose a document type.')
   const count = Number(copies)
-  if (!Number.isInteger(count) || count < 1 || count > 10) throw new HttpError(400, 'Copies must be between 1 and 10.')
+  const maxCopies = getNumber('maxCopies')
+  if (!Number.isInteger(count) || count < 1 || count > maxCopies) throw new HttpError(400, `Copies must be between 1 and ${maxCopies}.`)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(pickupDate ?? ''))) throw new HttpError(400, 'Choose a pickup date.')
-  const today = new Date().toISOString().slice(0, 10)
-  if (pickupDate < today) throw new HttpError(400, 'Pickup date cannot be in the past.')
+  if (pickupDate < localDate()) throw new HttpError(400, 'Pickup date cannot be in the past.')
   if (type.requires_clearance && !clearanceSummary(clearanceFor(req.user.id)).complete)
     throw new HttpError(403, `${type.name} can only be requested once your E-Clearance is complete.`)
   const duplicate = db
-    .prepare("SELECT 1 FROM doc_requests WHERE student_id=? AND doc_type_id=? AND status IN ('Pending','Processing')")
-    .get(req.user.id, type.id)
+    .prepare(`SELECT 1 FROM doc_requests WHERE student_id=? AND doc_type_id=? AND status IN (${DOC_OPEN.map(() => '?').join(',')})`)
+    .get(req.user.id, type.id, ...DOC_OPEN)
   if (duplicate) throw new HttpError(409, `You already have an open request for ${type.name}.`)
 
   const now = nowIso()
@@ -388,15 +522,17 @@ router.post('/documents/requests', (req, res) => {
        VALUES (?,?,?,?,?,?,?,'Pending',?,?) RETURNING id`,
     )
     .get(req.user.id, type.id, String(purpose ?? '').slice(0, 120) || null, count, pickupDate, String(remarks ?? '').slice(0, 500) || null, type.fee * count, now, now)
-  notifyRegistrars(`${req.user.name} requested ${type.name} (${reqNo(row.id)}).`, '/registrar/requests')
+  logRequest(row.id, 'Pending', 'Request submitted', req.user.id)
+  notifyRoles('registrar', `${req.user.name} requested ${type.name} (${reqNo(row.id)}).`, '/registrar/requests')
   res.status(201).json({ id: row.id, requestNo: reqNo(row.id), totalFee: type.fee * count })
 })
 
 router.post('/documents/requests/:id/cancel', (req, res) => {
   const info = db
-    .prepare("UPDATE doc_requests SET status='Cancelled', updated_at=? WHERE id=? AND student_id=? AND status='Pending'")
+    .prepare("UPDATE doc_requests SET status='Cancelled', updated_at=? WHERE id=? AND student_id=? AND status IN ('Pending','For Payment')")
     .run(nowIso(), req.params.id, req.user.id)
-  if (!info.changes) throw new HttpError(409, 'Only pending requests can be cancelled.')
+  if (!info.changes) throw new HttpError(409, 'Only requests that are pending or waiting for payment can be cancelled.')
+  logRequest(Number(req.params.id), 'Cancelled', 'Cancelled by the student', req.user.id)
   res.json({ ok: true })
 })
 
@@ -406,10 +542,18 @@ router.get('/account', (req, res) => {
   const fees = db.prepare('SELECT id, name, amount FROM fees WHERE student_id=? AND term_id=? ORDER BY id').all(req.user.id, term.id)
   const payments = db
     .prepare(
-      `SELECT id, due_on AS dueOn, reference, amount, status FROM payments
-       WHERE student_id=? AND term_id=? ORDER BY due_on`,
+      `SELECT id, due_on AS dueOn, reference, amount, status, method FROM payments
+       WHERE student_id=? AND term_id=? AND status <> 'Void' ORDER BY due_on`,
     )
     .all(req.user.id, term.id)
+  const documentPayments = db
+    .prepare(
+      `SELECT r.id, d.name AS document, r.or_number AS orNumber, r.paid_amount AS amount, r.paid_at AS paidAt
+       FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
+       WHERE r.student_id = ? AND r.paid_at IS NOT NULL ORDER BY r.paid_at DESC`,
+    )
+    .all(req.user.id)
+    .map((r) => ({ ...r, requestNo: reqNo(r.id) }))
   const money = balanceFor(req.user.id)
   const nextDue = payments.find((p) => p.status === 'Due' && money.balance > 0) ?? null
   res.json({
@@ -419,6 +563,7 @@ router.get('/account', (req, res) => {
     nextDue: nextDue ? nextDue.dueOn : null,
     fees,
     payments,
+    documentPayments,
     note: money.balance > 0 ? `Please settle ${peso(money.balance)} at the Cashier before the due date.` : 'Your account is fully paid.',
   })
 })
