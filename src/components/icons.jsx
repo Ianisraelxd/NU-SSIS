@@ -1,4 +1,4 @@
-import { LOGO, RIS_LOGO } from '../assets/logo-paths.js'
+import { RIS_LOGO, SIS_LOGO } from '../assets/logo-paths.js'
 
 const base = {
   width: 22,
@@ -49,11 +49,12 @@ export const CloseIcon = (p) => (
   </svg>
 )
 
-// Official portal emblems, traced to vector so they can take any colour (they use currentColor).
-//   SIS  → Student portal   · FIS → Faculty portal (same emblem, gold)   · RIS → Registrar portal
+// Official emblems, traced to vector so they can take any colour (they use currentColor).
+//   SIS → Student Services Information System (also used by the staff modules, tinted per module)
+//   RIS → Registrar and Records Information System
 export function Logo({ kind = 'SIS', size = 150, className = '' }) {
-  const art = kind === 'RIS' ? { d: RIS_LOGO.d, w: RIS_LOGO.w, h: RIS_LOGO.h } : { d: LOGO.mark.d, w: LOGO.mark.w, h: LOGO.mark.h }
-  const label = { SIS: 'Student Information System', FIS: 'Faculty Portal', RIS: 'Registrar and Records Information System' }[kind]
+  const art = kind === 'RIS' ? RIS_LOGO : SIS_LOGO
+  const label = kind === 'RIS' ? 'Registrar and Records Information System' : 'Student Services Information System'
   return (
     <svg
       className={`logo logo-${kind.toLowerCase()} ${className}`}

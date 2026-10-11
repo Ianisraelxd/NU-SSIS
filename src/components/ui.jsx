@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import { prefersReducedMotion } from '../lib/fx.js'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { statusTone } from '../lib/format.js'
 import { CloseIcon } from './icons.jsx'
@@ -156,7 +157,7 @@ export function Async({ state, children }) {
   return children(state.data)
 }
 
-export function Modal({ title, onClose, children, footer }) {
+export function Modal({ title, onClose, children, footer, printable, wide }) {
   const id = useId()
   const ref = useRef(null)
   useEffect(() => {
@@ -169,9 +170,9 @@ export function Modal({ title, onClose, children, footer }) {
       previous?.focus?.()
     }
   }, [onClose])
-  return (
-    <div className="backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} ref={ref}>
+  return createPortal(
+    <div className={`backdrop ${printable ? 'printable' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={id} tabIndex={-1} ref={ref}>
         <header>
           <h2 id={id}>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Close">
@@ -181,7 +182,8 @@ export function Modal({ title, onClose, children, footer }) {
         <div className="body">{children}</div>
         {footer && <footer>{footer}</footer>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

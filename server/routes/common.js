@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { db } from '../db.js'
-import { HttpError, currentTerm, hashPassword, termLabel, verifyPassword } from '../util.js'
+import { HttpError, audit, currentTerm, getSetting, hashPassword, termLabel, verifyPassword } from '../util.js'
 import { publicUser, requireAuth } from './auth.js'
 
 const router = Router()
@@ -9,6 +9,15 @@ router.use(requireAuth())
 router.get('/term', (_req, res) => {
   const term = currentTerm()
   res.json({ ...term, label: termLabel(term) })
+})
+
+// departments and programs (used by forms in several modules)
+router.get('/meta', (_req, res) => {
+  res.json({
+    schoolName: getSetting('schoolName'),
+    departments: db.prepare('SELECT id, code, name FROM departments ORDER BY code').all(),
+    programs: db.prepare('SELECT id, code, name, department_id AS departmentId FROM programs ORDER BY code').all(),
+  })
 })
 
 // ---- announcements ---------------------------------------------------------
@@ -79,6 +88,7 @@ router.post('/settings/password', (req, res) => {
   if (String(next).length < 8) throw new HttpError(400, 'New password must be at least 8 characters.')
   if (next === current) throw new HttpError(400, 'New password must be different from the current one.')
   db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(String(next)), req.user.id)
+  audit(req.user, 'password.change', 'user', req.user.login_id)
   // sign out every other device
   db.prepare('DELETE FROM sessions WHERE user_id=? AND token<>?').run(req.user.id, req.token)
   res.json({ ok: true })

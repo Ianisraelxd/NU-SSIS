@@ -1,53 +1,52 @@
 # 5. Sprint plan, Definition of Done and Scrum schedule
 
-> Dates, names and the final sprint length are for the team to confirm at the first meeting.
-
-## Priorities
-
-Backlog items are labelled **High / Medium / Low** in `03-product-backlog.md`. Sprint 1 takes the most important *and realistic* items.
-
-## Sprint duration
-
-**Proposed: 2 weeks per sprint** (1–2 weeks is manageable for a school project). _Agreed length: ______ · Sprint 1 starts: ______ · ends: _______
+From the team's Progress Report (October 5, 2026).
 
 ## Definition of Done
 
 A backlog item is **done** when it is:
 
-- [ ] **Coded** — the feature is implemented as described in its user story
-- [ ] **Working** — it behaves correctly in the browser, in light and dark mode and on a phone-width screen
-- [ ] **Tested** — its acceptance criteria were checked (test cases written down) and the checks pass
+- [ ] **Coded** — implemented as described in its user story
+- [ ] **Working** — behaves correctly in the browser, in light and dark mode and at phone width
+- [ ] **Tested** — its acceptance criteria were checked and the checks pass (`npm test`)
 - [ ] **Free from major errors** — no crashes, wrong data or blocked flows; `npm run build` and `npm run lint` pass
 - [ ] **Merged** — uploaded to GitHub through a reviewed pull request into `main`
 - [ ] **Documented when necessary** — README / docs updated if how to use or run the system changed
 
 (The same checklist is in `.github/pull_request_template.md`.)
 
-## Sprint 1
+## Sprint 1 — October 1–4, 2026 (summary)
 
-**Where we are:** a working prototype of most High-priority items already exists (backlog status *Done (prototype)*). What it lacks is verification, so Sprint 1 turns the prototype into something that meets the Definition of Done and fills the biggest gaps.
+| | |
+| --- | --- |
+| **Goal** | Plan the project: choose the topic, define the problem, scope and users, assign roles, and prepare the backlog |
+| **Done** | Project title and problem statement; target users; objectives; system requirements per module; Scrum roles; first product backlog; first meeting held on Discord (October 4, 9:00 PM) |
+| **Status** | Complete — see [`01-project-overview.md`](01-project-overview.md) to [`04-user-stories.md`](04-user-stories.md) |
 
-**Sprint 1 Goal:** *Students can sign in, view their information and request documents, and the registrar can process those requests — all verified against the Definition of Done — with account management started.*
+## Sprint 2 — plan
 
-### Sprint 1 backlog (proposed)
+**Goal:** *Finalise the UI/UX, build the back end and the database, so that the six modules and the queue work end to end.*
 
-| Item | Backlog ID | Task examples | Owner |
+| Task | Backlog items | Owner (per Progress Report) | State |
 | --- | --- | --- | --- |
-| Verify login and sessions | PB-01, PB-02 | Write test cases; test wrong/blank/expired cases; fix defects | _TBD_ |
-| Verify student views | PB-07, PB-08, PB-09, PB-13, PB-14 | Check every page against its acceptance criteria and the Figma | _TBD_ |
-| Verify document requests end to end | PB-16, PB-19, PB-20 | Test clearance gating, duplicates, status flow, notifications | _TBD_ |
-| Automated tests (start) | PB-29 | Set up a test runner; cover login, document request rules, grading and balance logic | _TBD_ |
-| Admin user management (start) | PB-06 | Add an administrator role; design create/disable account screens | _TBD_ |
-| Project set-up housekeeping | — | Scrum board created from `product-backlog.csv`; branch and PR rules agreed | _TBD_ |
+| Finalise UI/UX (wireframes, Figma) | SP-*, SQ-07 | Rinon | Implemented in `src/` |
+| Student and Admin modules (front end) | SP-*, AD-* | Rinon | Built |
+| Back-end APIs for all modules | RG-*, CS-*, DP-*, DR-* | Manalo | Built (`server/routes/`) |
+| Database design — ERD, 3NF, schema | all | Manalo, Ramos | Built (`server/schema.js`); diagrams in [`08-system-models.md`](08-system-models.md) |
+| Digital queue | QU-* | Manalo, Ramos | Built |
+| Integration and seed data | all | Ramos | Built |
+| Test plan and security testing | SQ-* | Alico | Plan in [`09-test-plan.md`](09-test-plan.md); 60 automated tests pass |
+| Documentation, ethics, referencing | — | Alico, Villarosa | Drafts in [`10-ethical-and-legal-notes.md`](10-ethical-and-legal-notes.md) |
+| Live deployment | PL-01 | Oca | Guide in [`11-deployment.md`](11-deployment.md); not yet deployed |
 
-Choose only what the team realistically expects to finish in the sprint; move the rest back to the backlog.
+**Team review needed:** "Built" means the code works and is tested by the automated suite. Items become *done* only after the team's review against the Definition of Done above.
 
 ## Scrum schedule
 
 | Event | When | Length |
 | --- | --- | --- |
 | Sprint Planning | Start of each sprint | ~1 hour |
-| **Daily Scrum** | Every day (or every school day) | 10–15 minute check-in: what I did, what I'll do, what blocks me |
+| **Daily Scrum** | Every school day (or by chat) | 10–15 min: what I did, what I'll do, what blocks me |
 | **Sprint Review** | End of sprint | Show the working increment to the instructor / Product Owner |
-| **Sprint Retrospective** | After the review | What went well, what to improve, one action for next sprint |
-| Next Sprint Planning | Beginning of Sprint 2 | — |
+| **Sprint Retrospective** | After the review | What went well, what to improve, one action |
+| Next Sprint Planning | Start of the next sprint | — |

@@ -30,7 +30,7 @@ export default function Home() {
     <div className="stack">
       <div className="hero">
         <h1>
-          Welcome to <b>Student Information System</b> v1.0
+          Welcome to <b>Student Services Information System</b> v1.0
         </h1>
         <p>National University Laguna Campus</p>
       </div>
@@ -46,8 +46,15 @@ export default function Home() {
                 value={n ? n.code : 'None'}
                 hint={n ? `${n.today ? 'Today' : DAYS[n.day - 1]} · ${fmtMinutes(n.startMin)} · ${n.room}` : 'No classes scheduled'}
               />
-              <Stat label="Pending tasks" to="/tasks" value={h.pendingTasks} tone={h.pendingTasks ? 'warn' : 'ok'} hint="Assignments to submit" />
+              <Stat label="Pending tasks" to="/tasks" value={h.pendingTasks} tone={h.pendingTasks ? 'warn' : 'ok'} hint="Things left to do" />
               <Stat label="Balance" to="/account" value={peso(h.balance)} tone={h.balance ? 'warn' : 'ok'} hint="Remaining this term" />
+              <Stat
+                label="Digital Queue"
+                to="/queue"
+                value={h.ticket ? h.ticket.number : 'None'}
+                tone={h.ticket?.status === 'Serving' ? 'ok' : undefined}
+                hint={h.ticket ? (h.ticket.status === 'Serving' ? `It’s your turn — ${h.ticket.office}` : `Waiting · ${h.ticket.office}`) : 'Take a number online'}
+              />
               <Stat
                 label="E-Clearance"
                 to="/clearance"

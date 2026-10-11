@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
-import { timeAgo } from '../lib/format.js'
+import { ROLE_LABEL, timeAgo } from '../lib/format.js'
 import { useRealtime, useRealtimeEvents } from '../lib/realtime.jsx'
 import { BellIcon, BulbIcon, Logo, MenuIcon, UserIcon } from './icons.jsx'
-import { useClickAway, useToast } from './ui.jsx'
+import { Loading, useClickAway, useToast } from './ui.jsx'
 
 function NotificationBell({ base }) {
   const [open, setOpen] = useState(false)
@@ -100,7 +100,7 @@ function ProfileMenu({ base }) {
   )
 }
 
-export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
+export default function Layout({ kind, brandName, base, nav, secondaryNav, logoClass = '' }) {
   const { user, theme, savePreferences } = useAuth()
   const toast = useToast()
   const location = useLocation()
@@ -139,7 +139,7 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
     <div className="shell">
       <aside className={`sidebar ${open ? 'open' : ''}`} aria-label="Main navigation">
         <div className="brand">
-          <Logo kind={kind} />
+          <Logo kind={kind} className={logoClass} />
           <small>National University</small>
           <strong>{brandName}</strong>
         </div>
@@ -157,7 +157,7 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
             <button className="icon-btn menu-btn" onClick={() => setOpen(!open)} aria-label="Open menu">
               <MenuIcon />
             </button>
-            <span className="id">{{ student: user.loginId, registrar: 'Registrar', teacher: 'Faculty' }[user.role]}</span>
+            <span className="id">{user.role === 'student' ? user.loginId : user.role === 'department' && user.department ? `${ROLE_LABEL.department} · ${user.department.code}` : ROLE_LABEL[user.role]}</span>
             <span className="sep" />
             <span className="name">{user.name}</span>
           </div>
@@ -176,7 +176,9 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav }) {
         </header>
         <main className="content" id="main">
           <div className="page" key={location.pathname}>
-            <Outlet />
+            <Suspense fallback={<Loading />}>
+              <Outlet />
+            </Suspense>
           </div>
         </main>
       </div>

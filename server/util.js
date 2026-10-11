@@ -115,13 +115,114 @@ export function notify(userId, message, link = null) {
   publish(userId, { type: 'notification' })
 }
 
-export function notifyRegistrars(message, link = null) {
-  for (const { id } of db.prepare("SELECT id FROM users WHERE role='registrar'").all()) notify(id, message, link)
+export function notifyRoles(role, message, link = null, departmentId = null) {
+  const rows = departmentId
+    ? db.prepare('SELECT id FROM users WHERE role = ? AND active = 1 AND department_id = ?').all(role, departmentId)
+    : db.prepare('SELECT id FROM users WHERE role = ? AND active = 1').all(role)
+  for (const { id } of rows) notify(id, message, link)
 }
+
+export const notifyRegistrars = (message, link = null) => notifyRoles('registrar', message, link)
 
 export const reqNo = (id) => `REQ-${String(id).padStart(4, '0')}`
 
-export const ENROLLMENT_STEPS = ['Registration', 'Subject Advising', 'Fee Assessment', 'Payment', 'Enrolled']
+// ---- settings ---------------------------------------------------------------------------------
+// Administrator-editable values (Admin → Settings). Defaults apply until a value is saved.
+export const SETTING_DEFAULTS = {
+  schoolName: 'National University Laguna',
+  maxUnits: '24', // most units a student can enroll in per term
+  minPaymentPercent: '50', // share of the assessment that must be paid before enrollment payment is confirmed
+  serviceMinutes: '5', // fallback average minutes per queue ticket until real data exists
+  maxCopies: '10', // most copies of a document per request
+}
+
+export function getSetting(key) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key)
+  return row ? row.value : SETTING_DEFAULTS[key]
+}
+export const getNumber = (key) => Number(getSetting(key))
+
+// ---- audit log + request history ----------------------------------------------------------------
+
+export function audit(user, action, entity = null, entityId = null, detail = null) {
+  db.prepare(
+    'INSERT INTO audit_log (user_id, actor, role, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
+  ).run(
+    user?.id ?? null,
+    user ? `${user.name} (${user.login_id})` : null,
+    user?.role ?? null,
+    action,
+    entity,
+    entityId == null ? null : String(entityId),
+    detail,
+    nowIso(),
+  )
+}
+
+export function logRequest(requestId, status, note, userId) {
+  db.prepare('INSERT INTO request_history (request_id, status, note, by_user, created_at) VALUES (?,?,?,?,?)').run(
+    requestId,
+    status,
+    note ?? null,
+    userId ?? null,
+    nowIso(),
+  )
+}
+
+// ---- accounts ------------------------------------------------------------------------------------
+
+export const STAFF_ROLES = ['registrar', 'cashier', 'department', 'admin']
+export const tempPassword = () => randomBytes(6).toString('base64url')
+
+export function createUser({ role, loginId, name, email = null, phone = null, password, departmentId = null }) {
+  if (db.prepare('SELECT 1 FROM users WHERE login_id = ?').get(loginId)) throw new HttpError(409, `The ID ${loginId} is already in use.`)
+  return db
+    .prepare(
+      'INSERT INTO users (role, login_id, password_hash, name, email, phone, department_id) VALUES (?,?,?,?,?,?,?) RETURNING id',
+    )
+    .get(role, loginId, hashPassword(password), name, email, phone, departmentId).id
+}
+
+// ---- enrollment ------------------------------------------------------------------------------------
+
+export const ENROLLMENT_STEPS = ['Subject Selection', 'Department Review', 'Registrar Approval', 'Payment', 'Enrolled']
+
+// Where is a student in enrolling for the current term? Derived from the request and the cashier's confirmation.
+export function enrollmentState(studentId) {
+  const term = currentTerm()
+  const request = term
+    ? db.prepare('SELECT * FROM enrollment_requests WHERE student_id = ? AND term_id = ?').get(studentId, term.id) ?? null
+    : null
+  let step = 0
+  let status = 'Not Started'
+  if (request) {
+    if (request.status === 'Returned') status = 'Returned'
+    else if (request.status === 'For Department Review') [step, status] = [1, 'In Progress']
+    else if (request.status === 'For Registrar Approval') [step, status] = [2, 'In Progress']
+    else if (request.status === 'Approved') [step, status] = request.payment_confirmed_at ? [5, 'Enrolled'] : [3, 'In Progress']
+    else if (db.prepare('SELECT 1 FROM enrollment_items WHERE request_id = ?').get(request.id)) status = 'In Progress'
+  }
+  return { request, step, status, enrolled: step === ENROLLMENT_STEPS.length }
+}
+
+export function paidPercent(studentId) {
+  const { assessed, paid } = balanceFor(studentId)
+  return assessed > 0 ? Math.round((paid / assessed) * 100) : 100
+}
+
+// ---- documents --------------------------------------------------------------------------------------
+
+export const DOC_STATUSES = ['Pending', 'For Payment', 'Processing', 'Ready for Release', 'Released', 'Cancelled']
+export const DOC_OPEN = ['Pending', 'For Payment', 'Processing', 'Ready for Release']
+
+// ---- offices (queue) -----------------------------------------------------------------------------------
+
+export const OFFICE_OF_ROLE = { registrar: 'Registrar', cashier: 'Cashier', department: 'Department' }
+export const QUEUE_SERVICES = {
+  Registrar: ['Enrollment', 'Clearance', 'Grade Viewing', 'Document Request'],
+  Cashier: ['Tuition Payment', 'Document Payment', 'Other Payment'],
+  Department: ['Enrollment Review', 'Clearance', 'Academic Advising'],
+}
 
 // ---- chat helpers -----------------------------------------------------------
 
@@ -137,3 +238,13 @@ export const MESSAGE_COLUMNS = `m.id, m.task_id AS taskId, m.sender_id AS sender
   m.created_at AS createdAt, m.edited_at AS editedAt, (m.deleted_at IS NOT NULL) AS deleted`
 
 export const shapeMessage = (m) => ({ ...m, deleted: !!m.deleted })
+
+// Today's date in the server's local time (YYYY-MM-DD) — queue numbers restart every day.
+export const localDate = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+export const startOfDayIso = () => {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  return d.toISOString()
+}
