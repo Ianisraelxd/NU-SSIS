@@ -72,7 +72,10 @@ describe('authentication & access control', () => {
   test('wrong password is rejected without saying which part was wrong', async () => {
     const r = await post('/auth/login', null, { role: 'student', loginId: '26001001', password: 'nope' })
     assert.equal(r.status, 401)
-    assert.equal(r.data.error, 'Incorrect ID or password.')
+    assert.match(r.data.error, /^Incorrect ID or password\./)
+    const ghost = await post('/auth/login', null, { role: 'student', loginId: '99999999', password: 'nope' })
+    const shape = (e) => e.replace(/\d+ attempts? left/, 'N attempts left')
+    assert.equal(shape(ghost.data.error), shape(r.data.error), 'unknown IDs must look the same as real ones')
   })
 
   test('protected routes need a token', async () => {
@@ -103,6 +106,20 @@ describe('authentication & access control', () => {
     }
     const locked = await post('/auth/login', null, { role: 'student', loginId: '26001010', password: PASSWORDS.student })
     assert.ok([423, 429].includes(locked.status), `expected a lock, got ${locked.status}`)
+  })
+
+  test('login attempts: a failed sign-in says how many tries are left and every attempt is logged for the admin', async () => {
+    const bad = await post('/auth/login', null, { role: 'student', loginId: '26001009', password: 'nope' })
+    assert.equal(bad.status, 401)
+    assert.match(bad.data.error, /4 attempts left/)
+    await login('student', '26001009') // success also resets the counter and is logged
+    const log = await get('/admin/login-attempts?q=26001009', tokens.admin)
+    assert.equal(log.status, 200)
+    assert.ok(log.data.rows.some((r) => !r.success && r.reason === 'wrong password'))
+    assert.ok(log.data.rows.some((r) => r.success))
+    assert.ok(!JSON.stringify(log.data).includes('nope'), 'passwords must never be stored')
+    const denied = await get('/admin/login-attempts', tokens.registrar)
+    assert.equal(denied.status, 403)
   })
 
   test('SQL injection in login and search inputs does nothing', async () => {

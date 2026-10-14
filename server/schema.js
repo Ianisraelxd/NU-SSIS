@@ -297,6 +297,20 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_log(created_at);
 
+CREATE TABLE IF NOT EXISTS login_attempts (
+  id INTEGER PRIMARY KEY,
+  login_id TEXT,
+  role TEXT,
+  user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  success INTEGER NOT NULL,
+  reason TEXT,
+  ip TEXT,
+  user_agent TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_time ON login_attempts(created_at);
+CREATE INDEX IF NOT EXISTS idx_login_attempts_login ON login_attempts(login_id, created_at);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

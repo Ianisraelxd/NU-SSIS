@@ -101,7 +101,7 @@ docs/     Scrum, requirements, models, test plan, deployment
 
 ## Security
 
-Passwords hashed with scrypt; 7-day sessions that end on password change; account lock after 5 failed sign-ins (15 min) plus a per-IP throttle; global rate limit; parameterised SQL everywhere; role checks on every route; security headers and a strict CSP in production; audit log of sensitive actions. This is still a demo build: demo passwords are public and HTTPS depends on how you host it — see [`docs/11-deployment.md`](docs/11-deployment.md).
+Every sign-in attempt is logged (Admin → Login Attempts) and failed sign-ins show the attempts left. Passwords hashed with scrypt; 7-day sessions that end on password change; account lock after 5 failed sign-ins (15 min) plus a per-IP throttle; global rate limit; parameterised SQL everywhere; role checks on every route; security headers and a strict CSP in production; audit log of sensitive actions. This is still a demo build: demo passwords are public and HTTPS depends on how you host it — see [`docs/11-deployment.md`](docs/11-deployment.md).
 
 ## Troubleshooting
 

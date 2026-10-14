@@ -13,6 +13,7 @@
 | 9 | [Test plan](09-test-plan.md) | Test levels, cases, security testing |
 | 10 | [Ethical and legal notes](10-ethical-and-legal-notes.md) | Draft for the team |
 | 11 | [Deployment](11-deployment.md) | Live URL guide |
+| 12 | [Master spec gap analysis](12-master-spec-gap-analysis.md) | Enterprise specification vs. current code, roadmap |
 
 ## Final paper checklist
 

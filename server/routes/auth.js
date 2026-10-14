@@ -56,6 +56,25 @@ function recordFailure(ip) {
   failures.set(ip, [...recentFailures(ip), Date.now()])
 }
 
+// Every sign-in attempt (good or bad) is kept for the administrator. Passwords are never stored.
+function logAttempt(req, { loginId, role, userId = null, success, reason }) {
+  db.prepare(
+    'INSERT INTO login_attempts (login_id, role, user_id, success, reason, ip, user_agent, created_at) VALUES (?,?,?,?,?,?,?,?)',
+  ).run(String(loginId ?? '').slice(0, 40), role ? String(role).slice(0, 20) : null, userId, success ? 1 : 0, reason, req.ip ?? null, String(req.headers['user-agent'] ?? '').slice(0, 200), new Date().toISOString())
+}
+
+// Unknown IDs get the same "attempts left" countdown as real ones (kept in memory), so the message
+// cannot be used to find out which accounts exist.
+const phantom = new Map()
+function phantomLeft(key) {
+  const now = Date.now()
+  const entry = phantom.get(key)
+  const count = entry && now - entry.at < LOCK_MINUTES * 60000 ? entry.count + 1 : 1
+  phantom.set(key, { count, at: now })
+  if (phantom.size > 5000) phantom.delete(phantom.keys().next().value)
+  return Math.max(0, MAX_FAILED_LOGINS - count)
+}
+
 const router = Router()
 
 router.post('/login', (req, res) => {
@@ -69,10 +88,13 @@ router.post('/login', (req, res) => {
   // brute-force protection: an account locks for a while after repeated failures
   if (user?.locked_until && user.locked_until > new Date().toISOString()) {
     const minutes = Math.max(1, Math.ceil((new Date(user.locked_until) - Date.now()) / 60000))
+    logAttempt(req, { loginId: id, role, userId: user.id, success: false, reason: 'account locked' })
     throw new HttpError(423, `Too many failed attempts. This account is locked for another ${minutes} minute${minutes === 1 ? '' : 's'}.`)
   }
 
   if (!user || !verifyPassword(String(password), user.password_hash)) {
+    let attemptsLeft = null
+    if (!user) attemptsLeft = phantomLeft(`${role}:${id}`)
     if (user) {
       const failed = user.failed_logins + 1
       if (failed >= MAX_FAILED_LOGINS) {
@@ -83,18 +105,25 @@ router.post('/login', (req, res) => {
         audit(null, 'login.locked', 'user', user.login_id, `Locked for ${LOCK_MINUTES} minutes after ${MAX_FAILED_LOGINS} failed attempts`)
       } else {
         db.prepare('UPDATE users SET failed_logins = ? WHERE id = ?').run(failed, user.id)
+        attemptsLeft = MAX_FAILED_LOGINS - failed
       }
     }
     recordFailure(req.ip)
+    logAttempt(req, { loginId: id, role, userId: user?.id, success: false, reason: !user ? 'unknown account' : attemptsLeft === null ? 'wrong password — account locked' : 'wrong password' })
     audit(null, 'login.failed', 'user', id, `Failed sign-in as ${role}`)
-    throw new HttpError(401, 'Incorrect ID or password.')
+    const hint = attemptsLeft === null || attemptsLeft === 0 ? ` This account is now locked for ${LOCK_MINUTES} minutes.` : ` ${attemptsLeft} attempt${attemptsLeft === 1 ? '' : 's'} left before the account locks.`
+    throw new HttpError(401, `Incorrect ID or password.${hint}`)
   }
-  if (!user.active) throw new HttpError(403, 'This account has been disabled. Contact the administrator.')
+  if (!user.active) {
+    logAttempt(req, { loginId: id, role, userId: user.id, success: false, reason: 'account disabled' })
+    throw new HttpError(403, 'This account has been disabled. Contact the administrator.')
+  }
 
   db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').run(user.id)
   const token = randomBytes(32).toString('hex')
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString()
   db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expires)
+  logAttempt(req, { loginId: id, role, userId: user.id, success: true, reason: 'signed in' })
   audit(user, 'login', 'user', user.login_id)
   res.json({ token, user: publicUser(user) })
 })

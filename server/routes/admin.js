@@ -284,6 +284,29 @@ router.put('/terms/current', (req, res) => {
 })
 
 // ---- audit log ---------------------------------------------------------------------------------------------------
+router.get('/login-attempts', (req, res) => {
+  const { q, result } = req.query
+  const where = []
+  const params = []
+  if (q) {
+    const like = `%${String(q).trim()}%`
+    where.push('(login_id LIKE ? OR ip LIKE ? OR reason LIKE ?)')
+    params.push(like, like, like)
+  }
+  if (result === 'success') where.push('success = 1')
+  if (result === 'failed') where.push('success = 0')
+  const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const limit = Math.min(Number(req.query.limit) || 50, 200)
+  const offset = Math.max(Number(req.query.offset) || 0, 0)
+  res.json({
+    total: db.prepare(`SELECT COUNT(*) AS c FROM login_attempts ${clause}`).get(...params).c,
+    failed24h: db.prepare('SELECT COUNT(*) AS c FROM login_attempts WHERE success = 0 AND created_at >= ?').get(new Date(Date.now() - 86400000).toISOString()).c,
+    rows: db
+      .prepare(`SELECT id, login_id AS loginId, role, success, reason, ip, created_at AS createdAt FROM login_attempts ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset),
+  })
+})
+
 router.get('/audit', (req, res) => {
   const { q, role } = req.query
   const where = []
