@@ -37,7 +37,7 @@ async function login(role, loginId, password = PASSWORDS[role]) {
 const tokens = {}
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'ssis-test-'))
-  server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, DB_FILE: join(dir, 'test.db'), API_PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] })
+  server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL ?? '', DB_DIR: join(dir, 'pg'), API_PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] })
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('server did not start')), 15000)
     server.stdout.on('data', (chunk) => {
@@ -529,5 +529,27 @@ describe('reports', () => {
     const juan = (await get('/student/clearance', tokens.juan)).data.offices.find((o) => o.office === 'Cashier')
     const account = (await get('/student/account', tokens.juan)).data
     assert.equal(juan.status, account.balance > 0 ? 'Pending' : 'Cleared')
+  })
+})
+
+// Requests really overlap on a PostgreSQL connection pool, so numbers handed out by "highest + 1" need locks.
+describe('concurrency', () => {
+  test('students taking queue numbers at the same moment all get different numbers', async () => {
+    const ids = ['26001002', '26001003', '26001004', '26001005', '26001007', '26001008', '26001009']
+    const students = await Promise.all(ids.map((id) => login('student', id)))
+    const results = await Promise.all(students.map((t) => post('/queue/tickets', t, { office: 'Cashier', service: 'Tuition Payment' })))
+    const made = results.filter((r) => r.status === 201).map((r) => r.data.ticket.number)
+    assert.ok(made.length >= 2, `expected several tickets to be created, got ${results.map((r) => r.status).join(',')}`)
+    assert.equal(new Set(made).size, made.length, `duplicate queue numbers: ${made.join(', ')}`)
+    for (const r of results) assert.ok([201, 409].includes(r.status), `unexpected status ${r.status}`)
+  })
+
+  test('payments recorded at the same moment get different official receipt numbers', async () => {
+    const list = (await get('/cashier/students', tokens.cashier)).data.students.filter((s) => s.balance >= 100).slice(0, 4)
+    assert.ok(list.length >= 2, 'need at least two students with a balance')
+    const results = await Promise.all(list.map((s) => post(`/cashier/students/${s.id}/payments`, tokens.cashier, { amount: 10, method: 'Cash' })))
+    for (const r of results) assert.equal(r.status, 201, JSON.stringify(r.data))
+    const numbers = results.map((r) => r.data.orNumber)
+    assert.equal(new Set(numbers).size, numbers.length, `duplicate receipt numbers: ${numbers.join(', ')}`)
   })
 })

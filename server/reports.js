@@ -22,16 +22,16 @@ const minutes = (ms) => ms / 60000
 const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null)
 const fmt = (n, unit) => (n == null ? '—' : `${n.toFixed(1)} ${unit}`)
 
-export function documentsReport(period) {
+export async function documentsReport(period) {
   const start = startOfPeriod(period)
-  const rows = db
-    .prepare(`${REQUEST_SQL} WHERE r.status <> 'Cancelled' ${start ? 'AND r.created_at >= ?' : ''} ORDER BY r.created_at DESC`)
-    .all(...(start ? [start.toISOString()] : []))
+  const rows = (await db
+    .prepare(`${REQUEST_SQL} WHERE r.status <> 'Cancelled' ${start ? 'AND r.created_at >= ?' : ''} ORDER BY r.created_at DESC, r.id`)
+    .all(...(start ? [start.toISOString()] : [])))
     .map(withNo)
   const released = rows.filter((r) => r.status === 'Released')
-  const byType = db
+  const byType = (await db
     .prepare('SELECT name FROM doc_types ORDER BY id')
-    .all()
+    .all())
     .map(({ name }) => {
       const own = rows.filter((r) => r.document === name)
       const done = own.filter((r) => r.status === 'Released').length
@@ -56,12 +56,12 @@ export function documentsReport(period) {
   }
 }
 
-export function clearanceReport() {
-  const students = db.prepare('SELECT user_id AS id FROM students').all()
-  const per = students.map((s) => clearanceSummary(clearanceFor(s.id)))
+export async function clearanceReport() {
+  const students = await db.prepare('SELECT user_id AS id FROM students').all()
+  const per = (await Promise.all(students.map(async (s) => clearanceSummary((await clearanceFor(s.id))))))
   const offices = {}
   for (const s of students)
-    for (const row of clearanceFor(s.id)) {
+    for (const row of (await clearanceFor(s.id))) {
       offices[row.office] ??= { cleared: 0, open: 0 }
       offices[row.office][row.status === 'Cleared' ? 'cleared' : 'open']++
     }
@@ -80,19 +80,19 @@ export function clearanceReport() {
   }
 }
 
-export function enrollmentReport() {
-  const students = db.prepare('SELECT user_id AS id, year_level AS year FROM students').all().map((s) => ({ ...s, state: enrollmentState(s.id) }))
+export async function enrollmentReport() {
+  const students = (await Promise.all((await db.prepare('SELECT user_id AS id, year_level AS year FROM students').all()).map(async (s) => ({ ...s, state: (await enrollmentState(s.id)) }))))
   const count = (status) => students.filter((s) => s.state.status === status).length
   return {
     type: 'enrollment',
     period: 'all',
     generatedAt: nowIso(),
-    term: termLabel(currentTerm()),
+    term: termLabel((await currentTerm())),
     stats: [
       { label: 'Students', value: students.length },
-      { label: 'Enrolled', value: count('Enrolled') },
-      { label: 'In Progress', value: count('In Progress') + count('Returned') },
-      { label: 'Not Started', value: count('Not Started') },
+      { label: 'Enrolled', value: (await count('Enrolled')) },
+      { label: 'In Progress', value: (await count('In Progress')) + (await count('Returned')) },
+      { label: 'Not Started', value: (await count('Not Started')) },
     ],
     chart: {
       title: 'Enrollment per Year Level',
@@ -105,14 +105,14 @@ export function enrollmentReport() {
     },
     table: {
       columns: ['Enrollment step', 'Students'],
-      rows: [...ENROLLMENT_STEPS.slice(0, 4).map((label, i) => [label, students.filter((s) => s.state.step === i && s.state.status !== 'Enrolled').length]), ['Enrolled', count('Enrolled')]],
+      rows: [...ENROLLMENT_STEPS.slice(0, 4).map((label, i) => [label, students.filter((s) => s.state.step === i && s.state.status !== 'Enrolled').length]), ['Enrolled', (await count('Enrolled'))]],
     },
   }
 }
 
-export function queueReport(period) {
+export async function queueReport(period) {
   const start = startOfPeriod(period)
-  const tickets = db
+  const tickets = await db
     .prepare(`SELECT * FROM queue_tickets ${start ? 'WHERE queue_date >= ?' : ''} ORDER BY id DESC`)
     .all(...(start ? [localDate(start)] : []))
   const served = tickets.filter((t) => t.status === 'Done')
@@ -153,23 +153,23 @@ export function queueReport(period) {
 }
 
 // Cashier: money collected (tuition payments + document fees)
-export function collectionsReport(period) {
+export async function collectionsReport(period) {
   const start = startOfPeriod(period)
   const since = start ? start.toISOString() : '0000'
-  const tuition = db
+  const tuition = (await db
     .prepare(
       `SELECT p.id, p.reference AS orNumber, p.amount, p.paid_at AS paidAt, COALESCE(p.method, 'Cash') AS method, u.name AS student, u.login_id AS studentNo
-       FROM payments p JOIN users u ON u.id = p.student_id WHERE p.status = 'Paid' AND p.paid_at >= ? ORDER BY p.paid_at DESC`,
+       FROM payments p JOIN users u ON u.id = p.student_id WHERE p.status = 'Paid' AND p.paid_at >= ? ORDER BY p.paid_at DESC, p.id`,
     )
-    .all(since)
+    .all(since))
     .map((r) => ({ ...r, type: 'Tuition' }))
-  const docs = db
+  const docs = (await db
     .prepare(
       `SELECT r.id, r.or_number AS orNumber, r.paid_amount AS amount, r.paid_at AS paidAt, 'Cash' AS method, u.name AS student, u.login_id AS studentNo, d.name AS document
        FROM doc_requests r JOIN users u ON u.id = r.student_id JOIN doc_types d ON d.id = r.doc_type_id
-       WHERE r.paid_at IS NOT NULL AND r.paid_at >= ? ORDER BY r.paid_at DESC`,
+       WHERE r.paid_at IS NOT NULL AND r.paid_at >= ? ORDER BY r.paid_at DESC, r.id`,
     )
-    .all(since)
+    .all(since))
     .map((r) => ({ ...r, type: 'Document' }))
   const all = [...tuition, ...docs].sort((a, b) => b.paidAt.localeCompare(a.paidAt))
   const sum = (list) => list.reduce((n, r) => n + r.amount, 0)
@@ -179,15 +179,15 @@ export function collectionsReport(period) {
     period,
     generatedAt: nowIso(),
     stats: [
-      { label: 'Total Collected', value: peso(sum(all)) },
-      { label: 'Tuition', value: peso(sum(tuition)) },
-      { label: 'Document Fees', value: peso(sum(docs)) },
+      { label: 'Total Collected', value: peso((await sum(all))) },
+      { label: 'Tuition', value: peso((await sum(tuition))) },
+      { label: 'Document Fees', value: peso((await sum(docs))) },
       { label: 'Transactions', value: all.length },
     ],
     chart: {
       title: 'Collections by Payment Method (₱)',
       series: ['Tuition', 'Documents'],
-      rows: methods.map((m) => ({ label: m, a: sum(tuition.filter((r) => r.method === m)), b: sum(docs.filter((r) => r.method === m)) })),
+      rows: (await Promise.all(methods.map(async (m) => ({ label: m, a: (await sum(tuition.filter((r) => r.method === m))), b: (await sum(docs.filter((r) => r.method === m))) })))),
     },
     table: {
       columns: ['OR number', 'Student', 'Type', 'Amount', 'Date'],
@@ -197,28 +197,27 @@ export function collectionsReport(period) {
 }
 
 // Admin: system-wide summary
-export function systemReport() {
+export async function systemReport() {
   const roles = ['student', 'registrar', 'cashier', 'department', 'admin']
-  const count = (sql, ...args) => db.prepare(sql).get(...args).c
-  const open = count(`SELECT COUNT(*) AS c FROM doc_requests WHERE status IN (${DOC_OPEN.map(() => '?').join(',')})`, ...DOC_OPEN)
-  const owing = db
-    .prepare('SELECT user_id AS id FROM students')
-    .all()
-    .filter((s) => balanceFor(s.id).balance > 0).length
+  const count = async (sql, ...args) => (await db.prepare(sql).get(...args)).c
+  const open = await count(`SELECT COUNT(*) AS c FROM doc_requests WHERE status IN (${DOC_OPEN.map(() => '?').join(',')})`, ...DOC_OPEN)
+  const owing = (
+    await Promise.all((await db.prepare('SELECT user_id AS id FROM students').all()).map(async (s) => (await balanceFor(s.id)).balance))
+  ).filter((balance) => balance > 0).length
   return {
     type: 'system',
     period: 'all',
     generatedAt: nowIso(),
     stats: [
-      { label: 'User Accounts', value: count('SELECT COUNT(*) AS c FROM users WHERE role <> ?', 'teacher') },
+      { label: 'User Accounts', value: (await count('SELECT COUNT(*) AS c FROM users WHERE role <> ?', 'teacher')) },
       { label: 'Open Document Requests', value: open },
       { label: 'Students With Balance', value: owing },
-      { label: 'Audit Entries', value: count('SELECT COUNT(*) AS c FROM audit_log') },
+      { label: 'Audit Entries', value: (await count('SELECT COUNT(*) AS c FROM audit_log')) },
     ],
     chart: {
       title: 'Accounts per Role',
       series: ['Active', 'Disabled'],
-      rows: roles.map((r) => ({ label: r[0].toUpperCase() + r.slice(1), a: count('SELECT COUNT(*) AS c FROM users WHERE role = ? AND active = 1', r), b: count('SELECT COUNT(*) AS c FROM users WHERE role = ? AND active = 0', r) })),
+      rows: (await Promise.all(roles.map(async (r) => ({ label: r[0].toUpperCase() + r.slice(1), a: (await count('SELECT COUNT(*) AS c FROM users WHERE role = ? AND active = 1', r)), b: (await count('SELECT COUNT(*) AS c FROM users WHERE role = ? AND active = 0', r)) })))),
     },
     table: null,
   }

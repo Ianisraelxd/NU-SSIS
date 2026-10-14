@@ -42,18 +42,18 @@ const DEFAULT_NOTE = {
 }
 
 // Move a request to the next status. `patch` can set extra columns (used by the cashier to record payment).
-export function moveRequest(id, to, user, { note = null, patch = {} } = {}) {
-  const row = db.prepare(`${REQUEST_SQL} WHERE r.id = ?`).get(id)
+export async function moveRequest(id, to, user, { note = null, patch = {} } = {}) {
+  const row = await db.prepare(`${REQUEST_SQL} WHERE r.id = ?`).get(id)
   if (!row) throw new HttpError(404, 'Request not found.')
   if (!FLOW[row.status].includes(to)) throw new HttpError(409, `A request that is “${row.status}” cannot be moved to “${to}”.`)
 
   const now = nowIso()
   const columns = { status: to, updated_at: now, completed_at: to === 'Released' ? now : null, ...patch }
-  db.prepare(`UPDATE doc_requests SET ${Object.keys(columns).map((c) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...Object.values(columns), id)
+  await db.prepare(`UPDATE doc_requests SET ${Object.keys(columns).map((c) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...Object.values(columns), id)
 
-  logRequest(id, to, note || DEFAULT_NOTE[to], user.id)
-  notify(row.studentId, message(row, to, row.status, note), '/documents')
-  if (to === 'For Payment') notifyRoles('cashier', `${row.document} ${reqNo(id)} for ${row.studentName} is waiting for payment.`, '/cashier/documents')
-  audit(user, `request.${to.toLowerCase().replaceAll(' ', '-')}`, 'request', reqNo(id), `${row.document} (${row.studentNo}): ${row.status} → ${to}${note ? ` — ${note}` : ''}`)
+  await logRequest(id, to, note || DEFAULT_NOTE[to], user.id)
+  await notify(row.studentId, message(row, to, row.status, note), '/documents')
+  if (to === 'For Payment') await notifyRoles('cashier', `${row.document} ${reqNo(id)} for ${row.studentName} is waiting for payment.`, '/cashier/documents')
+  await audit(user, `request.${to.toLowerCase().replaceAll(' ', '-')}`, 'request', reqNo(id), `${row.document} (${row.studentNo}): ${row.status} → ${to}${note ? ` — ${note}` : ''}`)
   return withNo({ ...row, ...{ status: to, updatedAt: now } })
 }

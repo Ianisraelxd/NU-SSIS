@@ -1,5 +1,5 @@
 import { db, transaction } from './db.js'
-import { hashPassword, localDate } from './util.js'
+import { eachSeq, hashPassword, localDate, mapSeq } from './util.js'
 
 // Demo accounts (development only — change them in Settings after signing in, or via the Admin module):
 //   Students      26001001 … 26001010   password: password123
@@ -160,14 +160,14 @@ const ANNOUNCEMENTS = [
   ],
 ]
 
-export function seedIfEmpty() {
-  const { c } = db.prepare('SELECT COUNT(*) AS c FROM users').get()
+export async function seedIfEmpty() {
+  const { c } = await db.prepare('SELECT COUNT(*) AS c FROM users').get()
   if (c > 0) return false
-  transaction(seed)
+  await transaction(seed)
   return true
 }
 
-function seed() {
+async function seed() {
   const insUser = db.prepare(
     'INSERT INTO users (role, login_id, password_hash, name, email, department_id) VALUES (?,?,?,?,?,?) RETURNING id',
   )
@@ -175,23 +175,23 @@ function seed() {
 
   // ---- departments, programs ---------------------------------------------------------
   const insDept = db.prepare('INSERT INTO departments (code, name) VALUES (?,?) RETURNING id')
-  const deptId = Object.fromEntries(DEPARTMENTS.map(([code, name]) => [code, insDept.get(code, name).id]))
+  const deptId = Object.fromEntries((await mapSeq(DEPARTMENTS, async ([code, name]) => [code, (await insDept.get(code, name)).id])))
   const insProgram = db.prepare('INSERT INTO programs (department_id, code, name) VALUES (?,?,?)')
-  for (const [dept, code, name] of PROGRAMS) insProgram.run(deptId[dept], code, name)
+  for (const [dept, code, name] of PROGRAMS) await insProgram.run(deptId[dept], code, name)
 
   // ---- staff ----------------------------------------------------------------------------
-  const registrarId = insUser.get('registrar', 'REG-0001', hashes.registrar, 'Victor Magtanggol', 'victor.magtanggol@nu-laguna.edu.ph', null).id
-  const cashierId = insUser.get('cashier', 'CSH-0001', hashes.cashier, 'Maricel Dizon', 'maricel.dizon@nu-laguna.edu.ph', null).id
+  const registrarId = (await insUser.get('registrar', 'REG-0001', hashes.registrar, 'Victor Magtanggol', 'victor.magtanggol@nu-laguna.edu.ph', null)).id
+  const cashierId = (await insUser.get('cashier', 'CSH-0001', hashes.cashier, 'Maricel Dizon', 'maricel.dizon@nu-laguna.edu.ph', null)).id
   const deptStaff = {
-    CCIT: insUser.get('department', 'DEP-0001', hashes.department, 'Dr. Rowena Bautista', 'rowena.bautista@nu-laguna.edu.ph', deptId.CCIT).id,
-    CBAA: insUser.get('department', 'DEP-0002', hashes.department, 'Prof. Armando Villegas', 'armando.villegas@nu-laguna.edu.ph', deptId.CBAA).id,
+    CCIT: (await insUser.get('department', 'DEP-0001', hashes.department, 'Dr. Rowena Bautista', 'rowena.bautista@nu-laguna.edu.ph', deptId.CCIT)).id,
+    CBAA: (await insUser.get('department', 'DEP-0002', hashes.department, 'Prof. Armando Villegas', 'armando.villegas@nu-laguna.edu.ph', deptId.CBAA)).id,
   }
-  insUser.get('admin', 'ADM-0001', hashes.admin, 'System Administrator', 'admin@nu-laguna.edu.ph', null)
+  await insUser.get('admin', 'ADM-0001', hashes.admin, 'System Administrator', 'admin@nu-laguna.edu.ph', null)
 
   // ---- terms ------------------------------------------------------------------------------
   const insTerm = db.prepare('INSERT INTO terms (school_year, semester, is_current) VALUES (?,?,?) RETURNING id')
-  const pastTermIds = PAST_TERMS.map((t) => insTerm.get(t.sy, t.sem, 0).id)
-  const currentTermId = insTerm.get('2026-2027', 'First Semester', 1).id
+  const pastTermIds = (await mapSeq(PAST_TERMS, async (t) => (await insTerm.get(t.sy, t.sem, 0)).id))
+  const currentTermId = (await insTerm.get('2026-2027', 'First Semester', 1)).id
 
   // ---- subjects + schedules ------------------------------------------------------------------
   const insSubject = db.prepare(
@@ -205,29 +205,29 @@ function seed() {
   for (const name of new Set(CURRENT_SUBJECTS.flatMap(([, , , meetings]) => meetings.map((m) => m[0])))) {
     const n = Object.keys(teacherIds).length + 1
     const slug = name.toLowerCase().replace(/[^a-z]+/g, '.').replace(/^\.+|\.+$/g, '')
-    teacherIds[name] = insUser.get('teacher', `T-${String(n).padStart(4, '0')}`, teacherHash, name, `${slug}@nu-laguna.edu.ph`, null).id
+    teacherIds[name] = (await insUser.get('teacher', `T-${String(n).padStart(4, '0')}`, teacherHash, name, `${slug}@nu-laguna.edu.ph`, null)).id
   }
-  const currentSubjectIds = CURRENT_SUBJECTS.map(([code, desc, units, meetings]) => {
-    const id = insSubject.get(code, desc, units, 3, 1, deptId.CCIT).id
-    for (const [instructor, day, s, e, room] of meetings) insMeeting.run(id, instructor, teacherIds[instructor], day, s, e, room)
+  const currentSubjectIds = (await mapSeq(CURRENT_SUBJECTS, async ([code, desc, units, meetings]) => {
+    const id = (await insSubject.get(code, desc, units, 3, 1, deptId.CCIT)).id
+    for (const [instructor, day, s, e, room] of meetings) await insMeeting.run(id, instructor, teacherIds[instructor], day, s, e, room)
     return id
-  })
+  }))
   const extraIds = Object.fromEntries(
-    EXTRA_OFFERED.map(([code, desc, units, dept, year]) => [code, insSubject.get(code, desc, units, year, 1, dept ? deptId[dept] : null).id]),
+    (await mapSeq(EXTRA_OFFERED, async ([code, desc, units, dept, year]) => [code, (await insSubject.get(code, desc, units, year, 1, dept ? deptId[dept] : null)).id])),
   )
-  const pastSubjectIds = PAST_TERMS.map((t) => t.subjects.map(([code, desc, units]) => insSubject.get(code, desc, units, 2, 0, deptId.CCIT).id))
+  const pastSubjectIds = (await mapSeq(PAST_TERMS, async (t) => (await mapSeq(t.subjects, async ([code, desc, units]) => (await insSubject.get(code, desc, units, 2, 0, deptId.CCIT)).id))))
 
   // ---- activities (optional LMS extras) ----------------------------------------------------------
   const insActivity = db.prepare(
     'INSERT INTO activities (subject_id, teacher_id, title, kind, points, due_at, instructions, created_at) VALUES (?,?,?,?,?,?,?,?) RETURNING id',
   )
-  const activityIds = ACTIVITIES.map(([title, kind, points, due, subjIdx, instructions]) =>
-    insActivity.get(currentSubjectIds[subjIdx], teacherIds[CURRENT_SUBJECTS[subjIdx][3][0][0]], title, kind, points, dueIn(due), instructions, minsAgo(60 * 24 * 6)).id,
-  )
+  const activityIds = (await mapSeq(ACTIVITIES, async ([title, kind, points, due, subjIdx, instructions]) =>
+    (await insActivity.get(currentSubjectIds[subjIdx], teacherIds[CURRENT_SUBJECTS[subjIdx][3][0][0]], title, kind, points, dueIn(due), instructions, minsAgo(60 * 24 * 6))).id,
+  ))
 
   // ---- document types --------------------------------------------------------------------------------
   const insDoc = db.prepare('INSERT INTO doc_types (name, fee, requires_clearance, requirements) VALUES (?,?,?,?)')
-  for (const [name, fee, needsClearance, reqs] of DOC_TYPES) insDoc.run(name, fee, needsClearance, reqs)
+  for (const [name, fee, needsClearance, reqs] of DOC_TYPES) await insDoc.run(name, fee, needsClearance, reqs)
 
   // ---- students ------------------------------------------------------------------------------------------
   const insStudent = db.prepare(
@@ -256,12 +256,12 @@ function seed() {
   const studentIds = []
   const orNumbers = { next: 1021 }
   let juanTasks = []
-  STUDENTS.forEach((s, index) => {
+  await eachSeq(STUDENTS, async (s, index) => {
     const isJuan = index === 0
     const isBsit = s.dept === 'CCIT'
-    const id = insUser.get('student', s.id, hashes.student, s.name, `${s.id}@students.nu-laguna.edu.ph`, null).id
+    const id = (await insUser.get('student', s.id, hashes.student, s.name, `${s.id}@students.nu-laguna.edu.ph`, null)).id
     studentIds.push(id)
-    insStudent.run(
+    await insStudent.run(
       id, s.program, deptId[s.dept], s.year, s.section, 'Regular',
       `${pick(['Brgy. Real', 'Brgy. Parian', 'Brgy. Banlic', 'Brgy. Mamatid'])}, ${pick(['Calamba', 'Cabuyao', 'Los Baños'])}, Laguna`,
       `${pick(['Elena', 'Ramon', 'Teresita', 'Dante'])} ${s.name.split(' ').at(-1)}`,
@@ -271,7 +271,7 @@ function seed() {
 
     // academic tracker (Juan matches the design: 96 earned / 64 remaining)
     const earned = isJuan ? [40, 40, 16, 0] : [40, s.year > 1 ? 40 : 14, s.year > 2 ? 28 : 0, s.year > 3 ? 12 : 0]
-    earned.forEach((units, i) => insProgress.run(id, i + 1, 40, units))
+    await eachSeq(earned, async (units, i) => await insProgress.run(id, i + 1, 40, units))
 
     // ---- enrollment request for the current term -----------------------------------------------------
     const bsitSubjects = currentSubjectIds
@@ -282,42 +282,42 @@ function seed() {
     let reqId = null
     if (s.enroll === 'approved' || s.enroll === 'enrolled') {
       const confirmed = s.enroll === 'enrolled'
-      reqId = insEnrollReq.get(id, currentTermId, 'Approved', null, stamp(40), deptBy, stamp(38), registrarId, stamp(36), confirmed ? cashierId : null, confirmed ? stamp(30) : null).id
-      chosen.forEach((sid) => insItem.run(reqId, sid))
-      chosen.forEach((sid, i) => {
+      reqId = (await insEnrollReq.get(id, currentTermId, 'Approved', null, stamp(40), deptBy, stamp(38), registrarId, stamp(36), confirmed ? cashierId : null, confirmed ? stamp(30) : null)).id
+      await eachSeq(chosen, async (sid) => await insItem.run(reqId, sid))
+      await eachSeq(chosen, async (sid, i) => {
         const [prelim, midterm] = isJuan ? CURRENT_SUBJECTS[i][4] : [between(76, 93), between(76, 93)]
-        insEnrolled.run(id, sid, currentTermId, prelim, midterm, null)
+        await insEnrolled.run(id, sid, currentTermId, prelim, midterm, null)
       })
     } else if (s.enroll === 'registrar') {
-      reqId = insEnrollReq.get(id, currentTermId, 'For Registrar Approval', null, stamp(3), deptBy, stamp(2), null, null, null, null).id
-      chosen.slice(0, 6).forEach((sid) => insItem.run(reqId, sid))
+      reqId = (await insEnrollReq.get(id, currentTermId, 'For Registrar Approval', null, stamp(3), deptBy, stamp(2), null, null, null, null)).id
+      await eachSeq(chosen.slice(0, 6), async (sid) => await insItem.run(reqId, sid))
     } else if (s.enroll === 'dept') {
-      reqId = insEnrollReq.get(id, currentTermId, 'For Department Review', null, stamp(1), null, null, null, null, null, null).id
-      chosen.slice(0, isBsit ? 5 : 3).forEach((sid) => insItem.run(reqId, sid))
+      reqId = (await insEnrollReq.get(id, currentTermId, 'For Department Review', null, stamp(1), null, null, null, null, null, null)).id
+      await eachSeq(chosen.slice(0, isBsit ? 5 : 3), async (sid) => await insItem.run(reqId, sid))
     } else if (s.enroll === 'returned') {
-      reqId = insEnrollReq.get(id, currentTermId, 'Returned', 'Please remove Capstone Project 1 — its prerequisite is not yet passed — and resubmit.', stamp(4), deptBy, stamp(3), null, null, null, null).id
-      ;[...chosen.slice(0, 4), extraIds.ITP109].forEach((sid) => insItem.run(reqId, sid))
+      reqId = (await insEnrollReq.get(id, currentTermId, 'Returned', 'Please remove Capstone Project 1 — its prerequisite is not yet passed — and resubmit.', stamp(4), deptBy, stamp(3), null, null, null, null)).id
+      ;await eachSeq([...chosen.slice(0, 4), extraIds.ITP109], async (sid) => await insItem.run(reqId, sid))
     }
 
     // past terms for the grades dropdown
     if (s.year >= 3 && isBsit) {
-      PAST_TERMS.forEach((_, t) => {
-        pastSubjectIds[t].forEach((subjectId) => {
+      await eachSeq(PAST_TERMS, async (_, t) => {
+        await eachSeq(pastSubjectIds[t], async (subjectId) => {
           const f = () => (isJuan ? between(82, 90) : between(80, 94))
-          insEnrolled.run(id, subjectId, pastTermIds[t], f(), f(), f())
+          await insEnrolled.run(id, subjectId, pastTermIds[t], f(), f(), f())
         })
       })
     }
 
     // class activities (optional LMS extras) — BSIT students only
     if (isBsit) {
-      const taskIds = activityIds.map((activityId) => insTask.get(id, activityId).id)
+      const taskIds = (await mapSeq(activityIds, async (activityId) => (await insTask.get(id, activityId)).id))
       if (isJuan) juanTasks = taskIds
     }
 
     // ---- clearances (Juan: 4 cleared, cashier pending, registrar hold — as designed) ------------------
     let deptHeadStatus = 'Cleared'
-    OFFICES.forEach(([office, requirement]) => {
+    await eachSeq(OFFICES, async ([office, requirement]) => {
       let status = 'Cleared'
       let remarks = null
       if (isJuan) {
@@ -330,32 +330,32 @@ function seed() {
         remarks = status === 'Hold' ? 'See office for details' : 'Requirement not yet submitted'
       }
       if (office === 'Department Head') deptHeadStatus = status
-      insClear.run(id, office, requirement, status, remarks)
+      await insClear.run(id, office, requirement, status, remarks)
     })
 
     // ---- academic requirements the department verifies (consistent with the Department Head clearance) --
     const reqNames = isBsit ? ['Final project documentation', 'OJT completion report', 'Capstone defense schedule'] : ['Practicum report', 'Accounting laboratory set']
-    reqNames.forEach((name, i) => {
+    await eachSeq(reqNames, async (name, i) => {
       const verified = deptHeadStatus === 'Cleared' || i === reqNames.length - 1
-      insReqmt.run(id, name, verified ? 'Verified' : i === 0 ? 'Missing' : 'Pending', verified ? null : i === 0 ? 'Not yet submitted to the department.' : null, verified ? deptBy : null, verified ? daysAgo(20) : null, daysAgo(45))
+      await insReqmt.run(id, name, verified ? 'Verified' : i === 0 ? 'Missing' : 'Pending', verified ? null : i === 0 ? 'Not yet submitted to the department.' : null, verified ? deptBy : null, verified ? daysAgo(20) : null, daysAgo(45))
     })
 
     // ---- fees & payments (official receipts) --------------------------------------------------------------
     const fees = [['Tuition', 18000], ['Miscellaneous', 4500], ['Laboratory', 2500], ['Other fees', 1000]]
-    for (const [feeName, amount] of fees) insFee.run(id, currentTermId, feeName, amount)
+    for (const [feeName, amount] of fees) await insFee.run(id, currentTermId, feeName, amount)
     const offsets = [-65, -37, -10]
     let paidTotal = 0
-    s.paid.forEach((amount, i) => {
+    await eachSeq(s.paid, async (amount, i) => {
       const off = offsets[Math.min(i, 2)] - (i > 2 ? 3 : 0)
       const or = isJuan ? ['OR-1021', 'OR-1188', 'OR-1302'][i] : `OR-${(orNumbers.next += 7)}`
-      insPay.run(id, currentTermId, dateOnly(off), or, amount, 'Paid', pick(['Cash', 'GCash', 'Bank Transfer']), daysAgo(-off, 10), cashierId)
+      await insPay.run(id, currentTermId, dateOnly(off), or, amount, 'Paid', pick(['Cash', 'GCash', 'Bank Transfer']), daysAgo(-off, 10), cashierId)
       paidTotal += amount
     })
-    if (paidTotal < 26000) insPay.run(id, currentTermId, dateOnly(isJuan ? 27 : 20), null, 26000 - paidTotal, 'Due', null, null, null)
+    if (paidTotal < 26000) await insPay.run(id, currentTermId, dateOnly(isJuan ? 27 : 20), null, 26000 - paidTotal, 'Due', null, null, null)
   })
 
   // ---- document requests with history (Juan's four exactly as designed, then a spread for reports) ------------
-  const byName = Object.fromEntries(db.prepare('SELECT id, name, fee FROM doc_types ORDER BY id').all().map((t) => [t.name, t]))
+  const byName = Object.fromEntries((await db.prepare('SELECT id, name, fee FROM doc_types ORDER BY id').all()).map((t) => [t.name, t]))
   const insReq = db.prepare(
     `INSERT INTO doc_requests (student_id, doc_type_id, purpose, copies, pickup_date, remarks, total_fee, status, or_number, paid_amount, paid_at, paid_by, created_at, updated_at, completed_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
@@ -366,29 +366,29 @@ function seed() {
   const BY = { Pending: null, 'For Payment': registrarId, Processing: cashierId, 'Ready for Release': registrarId, Released: registrarId }
 
   let orSeq = 5000
-  const addRequest = (studentId, typeName, purpose, copies, status, createdIso, updatedIso, pickup) => {
+  const addRequest = async (studentId, typeName, purpose, copies, status, createdIso, updatedIso, pickup) => {
     const t = byName[typeName]
     const total = t.fee * copies
     const reached = PATH.indexOf(status)
     const hasFee = total > 0
     const paid = hasFee && reached >= 2
     const paidAt = paid ? new Date(new Date(createdIso).getTime() + 3600000 * 5).toISOString() : null
-    const id = insReq.get(studentId, t.id, purpose, copies, pickup, null, total, status, paid ? `OR-${++orSeq}` : null, paid ? total : null, paidAt, paid ? cashierId : null, createdIso, updatedIso, status === 'Released' ? updatedIso : null).id
+    const id = (await insReq.get(studentId, t.id, purpose, copies, pickup, null, total, status, paid ? `OR-${++orSeq}` : null, paid ? total : null, paidAt, paid ? cashierId : null, createdIso, updatedIso, status === 'Released' ? updatedIso : null)).id
     // history: every status up to the current one, spread between created and updated
     const start = new Date(createdIso).getTime()
     const end = new Date(updatedIso).getTime()
-    PATH.slice(0, reached + 1).forEach((st, i) => {
+    await eachSeq(PATH.slice(0, reached + 1), async (st, i) => {
       if (st === 'For Payment' && !hasFee) return
-      insHist.run(id, st, NOTES[st], BY[st], new Date(start + ((end - start) * i) / Math.max(reached, 1)).toISOString())
+      await insHist.run(id, st, NOTES[st], BY[st], new Date(start + ((end - start) * i) / Math.max(reached, 1)).toISOString())
     })
     return id
   }
   const juan = studentIds[0]
   const d = (offset, hour = 9) => daysAgo(offset, hour)
-  addRequest(juan, 'Form 137', 'Transfer of records', 1, 'Released', d(13), d(10), dateOnly(-9))
-  addRequest(juan, 'Good Moral Certificate', 'Internship application', 1, 'Released', d(8), d(5), dateOnly(-4))
-  addRequest(juan, 'Transcript of Records', 'Scholarship requirement', 1, 'Ready for Release', d(4), d(1), dateOnly(3))
-  addRequest(juan, 'Certificate of Enrollment', 'Allowance claim', 1, 'Pending', d(2), d(2), dateOnly(3))
+  await addRequest(juan, 'Form 137', 'Transfer of records', 1, 'Released', d(13), d(10), dateOnly(-9))
+  await addRequest(juan, 'Good Moral Certificate', 'Internship application', 1, 'Released', d(8), d(5), dateOnly(-4))
+  await addRequest(juan, 'Transcript of Records', 'Scholarship requirement', 1, 'Ready for Release', d(4), d(1), dateOnly(3))
+  await addRequest(juan, 'Certificate of Enrollment', 'Allowance claim', 1, 'Pending', d(2), d(2), dateOnly(3))
 
   const others = [
     ['Transcript of Records', 36], ['Certificate of Enrollment', 30], ['Certificate of Grades', 22], ['Good Moral Certificate', 20], ['Diploma', 8], ['Form 137', 6], ['Others', 8],
@@ -404,7 +404,7 @@ function seed() {
           : roll < 0.42 ? 'Released' : roll < 0.54 ? 'Ready for Release' : roll < 0.66 ? 'Processing' : roll < 0.8 ? 'For Payment' : 'Pending'
       const created = d(age, 8 + Math.floor(rand() * 8))
       const updated = status === 'Pending' ? created : daysAgo(Math.max(age - Math.ceil(rand() * 4), 0), 15)
-      addRequest(student, name, 'Personal use', 1 + Math.floor(rand() * 2), status, created, updated, dateOnly(4))
+      await addRequest(student, name, 'Personal use', 1 + Math.floor(rand() * 2), status, created, updated, dateOnly(4))
     }
   }
 
@@ -440,7 +440,7 @@ function seed() {
     const created = minsAgo(ago)
     const called = status === 'Waiting' ? null : minsAgo(Math.max(ago - 8, 1))
     const done = status === 'Done' ? new Date(new Date(called).getTime() + svc * 60000).toISOString() : null
-    insTicket.run(
+    await insTicket.run(
       studentIds[idx], office, service, office === 'Department' ? deptId.CCIT : null, today, seqs[office], `${prefix}-${String(seqs[office]).padStart(3, '0')}`,
       status, status === 'Waiting' ? null : `Counter ${office === 'Registrar' ? 1 : office === 'Cashier' ? 2 : 1}`, status === 'Waiting' ? null : staffOf[office], 5, created, called, done,
     )
@@ -448,34 +448,34 @@ function seed() {
 
   // ---- announcements -----------------------------------------------------------------------------------------------
   const insAnn = db.prepare('INSERT INTO announcements (title, body, author_id, created_at) VALUES (?,?,?,?)')
-  for (const [title, body, age] of ANNOUNCEMENTS) insAnn.run(title, body, registrarId, daysAgo(age))
+  for (const [title, body, age] of ANNOUNCEMENTS) await insAnn.run(title, body, registrarId, daysAgo(age))
 
   // ---- sample private-comment threads for Juan (optional LMS extras) --------------------------------------------------
   const insMsg = db.prepare('INSERT INTO task_messages (task_id, sender_id, body, created_at) VALUES (?,?,?,?) RETURNING id')
   const markRead = db.prepare('INSERT INTO thread_reads (task_id, user_id, last_read_id) VALUES (?,?,?)')
   const nositera = teacherIds['Jearemy Niko Nositera']
   const t1 = juanTasks[0]
-  insMsg.get(t1, juan, 'Good day, sir! For Lab Activity 1, do we need to include the ERD in the same PDF?', minsAgo(190))
-  insMsg.get(t1, nositera, 'Good day, Juan! Yes — please put the ERD on the last page of the same PDF so I can check everything in one go.', minsAgo(172))
-  const thanks = insMsg.get(t1, juan, 'Noted, thank you sir! 🙏', minsAgo(165)).id
-  insMsg.get(t1, nositera, 'Reminder: the deadline is 11:59 PM on the due date. Late submissions lose 10 points per day.', minsAgo(6))
-  markRead.run(t1, juan, thanks)
-  markRead.run(t1, nositera, thanks + 1)
+  await insMsg.get(t1, juan, 'Good day, sir! For Lab Activity 1, do we need to include the ERD in the same PDF?', minsAgo(190))
+  await insMsg.get(t1, nositera, 'Good day, Juan! Yes — please put the ERD on the last page of the same PDF so I can check everything in one go.', minsAgo(172))
+  const thanks = (await insMsg.get(t1, juan, 'Noted, thank you sir! 🙏', minsAgo(165))).id
+  await insMsg.get(t1, nositera, 'Reminder: the deadline is 11:59 PM on the due date. Late submissions lose 10 points per day.', minsAgo(6))
+  await markRead.run(t1, juan, thanks)
+  await markRead.run(t1, nositera, thanks + 1)
 
   // ---- notifications + a little audit history ------------------------------------------------------------------------------
   const insNote = db.prepare('INSERT INTO notifications (user_id, message, link, created_at) VALUES (?,?,?,?)')
-  insNote.run(juan, 'Your Transcript of Records (REQ-0003) is ready for release.', '/documents', daysAgo(1, 15))
-  insNote.run(juan, 'Registrar hold: Missing Form 137. Please visit the Registrar’s Office.', '/clearance', daysAgo(3, 11))
+  await insNote.run(juan, 'Your Transcript of Records (REQ-0003) is ready for release.', '/documents', daysAgo(1, 15))
+  await insNote.run(juan, 'Registrar hold: Missing Form 137. Please visit the Registrar’s Office.', '/clearance', daysAgo(3, 11))
 
   const insAudit = db.prepare(
     'INSERT INTO audit_log (user_id, actor, role, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
   )
-  const adminRow = db.prepare("SELECT id, name, login_id FROM users WHERE role='admin'").get()
+  const adminRow = await db.prepare("SELECT id, name, login_id FROM users WHERE role='admin'").get()
   const trail = [
     [adminRow.id, `${adminRow.name} (${adminRow.login_id})`, 'admin', 'settings.update', 'settings', 'maxUnits', 'Maximum units per term set to 24', daysAgo(14)],
     [registrarId, 'Victor Magtanggol (REG-0001)', 'registrar', 'student.verify', 'student', '26001001', 'Verified academic information', daysAgo(10)],
     [cashierId, 'Maricel Dizon (CSH-0001)', 'cashier', 'payment.record', 'payment', 'OR-1302', 'Recorded ₱5,000 (Cash) for 26001001', daysAgo(9)],
     [registrarId, 'Victor Magtanggol (REG-0001)', 'registrar', 'enrollment.approve', 'enrollment', '26001001', 'Approved enrollment for A.Y. 2026-2027, First Semester', daysAgo(8)],
   ]
-  for (const row of trail) insAudit.run(...row)
+  for (const row of trail) await insAudit.run(...row)
 }

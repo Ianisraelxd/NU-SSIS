@@ -27,21 +27,21 @@ const ROLES = ['student', 'registrar', 'cashier', 'department', 'admin', ...(FEA
 mountAnnouncements(router)
 
 // ---- overview -------------------------------------------------------------------------------------
-router.get('/overview', (_req, res) => {
-  const count = (sql, ...args) => db.prepare(sql).get(...args).c
-  const roles = Object.fromEntries(ROLES.map((r) => [r, count('SELECT COUNT(*) AS c FROM users WHERE role = ? AND active = 1', r)]))
+router.get('/overview', async (_req, res) => {
+  const count = async (sql, ...args) => (await db.prepare(sql).get(...args)).c
+  const roles = Object.fromEntries((await Promise.all(ROLES.map(async (r) => [r, (await count('SELECT COUNT(*) AS c FROM users WHERE role = ? AND active = 1', r))]))))
   res.json({
     roles,
-    disabled: count('SELECT COUNT(*) AS c FROM users WHERE active = 0'),
-    locked: count('SELECT COUNT(*) AS c FROM users WHERE locked_until > ?', new Date().toISOString()),
-    openRequests: count("SELECT COUNT(*) AS c FROM doc_requests WHERE status IN ('Pending','For Payment','Processing','Ready for Release')"),
-    ticketsToday: count('SELECT COUNT(*) AS c FROM queue_tickets WHERE queue_date = ?', localDate()),
-    failedLogins24h: count("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'login.failed' AND created_at >= ?", new Date(Date.now() - 86400000).toISOString()),
+    disabled: (await count('SELECT COUNT(*) AS c FROM users WHERE active = 0')),
+    locked: (await count('SELECT COUNT(*) AS c FROM users WHERE locked_until > ?', new Date().toISOString())),
+    openRequests: (await count("SELECT COUNT(*) AS c FROM doc_requests WHERE status IN ('Pending','For Payment','Processing','Ready for Release')")),
+    ticketsToday: (await count('SELECT COUNT(*) AS c FROM queue_tickets WHERE queue_date = ?', localDate())),
+    failedLogins24h: (await count("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'login.failed' AND created_at >= ?", new Date(Date.now() - 86400000).toISOString())),
     collectedToday:
-      db.prepare("SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE status = 'Paid' AND paid_at >= ?").get(startOfDayIso()).v +
-      db.prepare('SELECT COALESCE(SUM(paid_amount),0) AS v FROM doc_requests WHERE paid_at >= ?').get(startOfDayIso()).v,
-    recent: db.prepare('SELECT actor, role, action, detail, created_at AS createdAt FROM audit_log ORDER BY id DESC LIMIT 8').all(),
-    term: termLabel(currentTerm()),
+      (await db.prepare("SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE status = 'Paid' AND paid_at >= ?").get(startOfDayIso())).v +
+      (await db.prepare('SELECT COALESCE(SUM(paid_amount),0) AS v FROM doc_requests WHERE paid_at >= ?').get(startOfDayIso())).v,
+    recent: (await db.prepare('SELECT actor, role, action, detail, created_at AS createdAt FROM audit_log ORDER BY id DESC LIMIT 8').all()),
+    term: termLabel((await currentTerm())),
   })
 })
 
@@ -51,7 +51,7 @@ const USER_SQL = `
          u.department_id AS departmentId, d.code AS deptCode, u.created_at AS createdAt
   FROM users u LEFT JOIN departments d ON d.id = u.department_id`
 
-router.get('/users', (req, res) => {
+router.get('/users', async (req, res) => {
   const { role, q, status } = req.query
   const where = [`u.role IN (${ROLES.map(() => '?').join(',')})`]
   const params = [...ROLES]
@@ -65,12 +65,12 @@ router.get('/users', (req, res) => {
   }
   if (status === 'active') where.push('u.active = 1')
   if (status === 'disabled') where.push('u.active = 0')
-  const rows = db.prepare(`${USER_SQL} WHERE ${where.join(' AND ')} ORDER BY u.role, u.login_id LIMIT 500`).all(...params)
+  const rows = await db.prepare(`${USER_SQL} WHERE ${where.join(' AND ')} ORDER BY u.role, u.login_id LIMIT 500`).all(...params)
   const now = new Date().toISOString()
   res.json({ roles: ROLES, users: rows.map((u) => ({ ...u, active: !!u.active, locked: !!u.lockedUntil && u.lockedUntil > now })) })
 })
 
-function userFields(body, { creating }) {
+async function userFields(body, { creating }) {
   const clean = (v, max) => String(v ?? '').trim().slice(0, max)
   const name = clean(body.name, 80)
   if (name.length < 2) throw new HttpError(400, 'Enter the full name.')
@@ -79,23 +79,23 @@ function userFields(body, { creating }) {
   const role = body.role
   if (creating && !STAFF_ROLES.includes(role)) throw new HttpError(400, 'Choose a role. (Student accounts are created by the Registrar in Student Records.)')
   const departmentId = body.departmentId ? Number(body.departmentId) : null
-  if (departmentId && !db.prepare('SELECT 1 FROM departments WHERE id = ?').get(departmentId)) throw new HttpError(400, 'Unknown department.')
+  if (departmentId && !(await db.prepare('SELECT 1 FROM departments WHERE id = ?').get(departmentId))) throw new HttpError(400, 'Unknown department.')
   if (role === 'department' && !departmentId) throw new HttpError(400, 'Department staff must be assigned to a department.')
   return { name, email: email || null, phone: clean(body.phone, 20) || null, role, departmentId: role === 'department' ? departmentId : null }
 }
 
-router.post('/users', (req, res) => {
-  const f = userFields(req.body ?? {}, { creating: true })
+router.post('/users', async (req, res) => {
+  const f = await userFields(req.body ?? {}, { creating: true })
   const loginId = String(req.body?.loginId ?? '').trim()
   if (!/^[A-Za-z0-9-]{3,20}$/.test(loginId)) throw new HttpError(400, 'The ID must be 3–20 letters, digits or dashes (e.g. CSH-0002).')
   const password = tempPassword()
-  const id = createUser({ role: f.role, loginId, name: f.name, email: f.email, phone: f.phone, password, departmentId: f.departmentId })
-  audit(req.user, 'user.create', 'user', loginId, `${f.role}: ${f.name}`)
+  const id = await createUser({ role: f.role, loginId, name: f.name, email: f.email, phone: f.phone, password, departmentId: f.departmentId })
+  await audit(req.user, 'user.create', 'user', loginId, `${f.role}: ${f.name}`)
   res.status(201).json({ id, loginId, tempPassword: password })
 })
 
-router.patch('/users/:id', (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+router.patch('/users/:id', async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   if (!user) throw new HttpError(404, 'User not found.')
   const body = req.body ?? {}
   const isSelf = user.id === req.user.id
@@ -103,14 +103,14 @@ router.patch('/users/:id', (req, res) => {
 
   if (typeof body.active === 'boolean' && body.active !== !!user.active) {
     if (isSelf) throw new HttpError(409, 'You cannot disable your own account.')
-    if (!body.active && user.role === 'admin' && db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1").get().c <= 1)
+    if (!body.active && user.role === 'admin' && (await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1").get()).c <= 1)
       throw new HttpError(409, 'At least one administrator must stay active.')
-    db.prepare('UPDATE users SET active = ? WHERE id = ?').run(body.active ? 1 : 0, user.id)
-    if (!body.active) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id)
+    await db.prepare('UPDATE users SET active = ? WHERE id = ?').run(body.active ? 1 : 0, user.id)
+    if (!body.active) await db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id)
     changes.push(body.active ? 'enabled' : 'disabled')
   }
   if (body.unlock) {
-    db.prepare('UPDATE users SET locked_until = NULL, failed_logins = 0 WHERE id = ?').run(user.id)
+    await db.prepare('UPDATE users SET locked_until = NULL, failed_logins = 0 WHERE id = ?').run(user.id)
     changes.push('unlocked')
   }
   if (body.name !== undefined || body.email !== undefined || body.role !== undefined || body.departmentId !== undefined) {
@@ -120,33 +120,33 @@ router.patch('/users/:id', (req, res) => {
       if (!staff) throw new HttpError(409, 'Student roles cannot be changed here.')
       if (!STAFF_ROLES.includes(body.role)) throw new HttpError(400, 'Choose a staff role.')
       if (isSelf) throw new HttpError(409, 'You cannot change your own role.')
-      if (user.role === 'admin' && db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1").get().c <= 1)
+      if (user.role === 'admin' && (await db.prepare("SELECT COUNT(*) AS c FROM users WHERE role = 'admin' AND active = 1").get()).c <= 1)
         throw new HttpError(409, 'At least one administrator must stay active.')
     }
-    const f = userFields({ name: body.name ?? user.name, email: body.email ?? user.email, phone: body.phone ?? user.phone, role, departmentId: body.departmentId ?? user.department_id }, { creating: false })
-    db.prepare('UPDATE users SET name = ?, email = ?, phone = ?, role = ?, department_id = ? WHERE id = ?').run(f.name, f.email, f.phone, role, role === 'department' ? f.departmentId : user.role === 'student' ? user.department_id : null, user.id)
+    const f = await userFields({ name: body.name ?? user.name, email: body.email ?? user.email, phone: body.phone ?? user.phone, role, departmentId: body.departmentId ?? user.department_id }, { creating: false })
+    await db.prepare('UPDATE users SET name = ?, email = ?, phone = ?, role = ?, department_id = ? WHERE id = ?').run(f.name, f.email, f.phone, role, role === 'department' ? f.departmentId : user.role === 'student' ? user.department_id : null, user.id)
     if (role !== user.role) changes.push(`role ${user.role} → ${role}`)
     else changes.push('details updated')
   }
-  if (changes.length) audit(req.user, 'user.update', 'user', user.login_id, changes.join(', '))
+  if (changes.length) await audit(req.user, 'user.update', 'user', user.login_id, changes.join(', '))
   res.json({ ok: true })
 })
 
-router.post('/users/:id/reset-password', (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+router.post('/users/:id/reset-password', async (req, res) => {
+  const user = await db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   if (!user) throw new HttpError(404, 'User not found.')
   const password = tempPassword()
-  transaction(() => {
-    db.prepare('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').run(hashPassword(password), user.id)
-    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id)
+  await transaction(async () => {
+    await db.prepare('UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL WHERE id = ?').run(hashPassword(password), user.id)
+    await db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id)
   })
-  audit(req.user, 'user.reset-password', 'user', user.login_id)
+  await audit(req.user, 'user.reset-password', 'user', user.login_id)
   res.json({ loginId: user.login_id, tempPassword: password })
 })
 
 // ---- departments & programs -----------------------------------------------------------------------------
-router.get('/departments', (_req, res) => {
-  const departments = db
+router.get('/departments', async (_req, res) => {
+  const departments = await db
     .prepare(
       `SELECT d.id, d.code, d.name,
               (SELECT COUNT(*) FROM students s WHERE s.department_id = d.id) AS students,
@@ -154,7 +154,7 @@ router.get('/departments', (_req, res) => {
        FROM departments d ORDER BY d.code`,
     )
     .all()
-  const programs = db.prepare('SELECT p.id, p.code, p.name, p.department_id AS departmentId FROM programs p ORDER BY p.code').all()
+  const programs = await db.prepare('SELECT p.id, p.code, p.name, p.department_id AS departmentId FROM programs p ORDER BY p.code').all()
   res.json({ departments: departments.map((d) => ({ ...d, programs: programs.filter((p) => p.departmentId === d.id) })) })
 })
 
@@ -166,56 +166,56 @@ function codeName(body, label) {
   return { code, name }
 }
 
-router.post('/departments', (req, res) => {
+router.post('/departments', async (req, res) => {
   const { code, name } = codeName(req.body, 'Department')
-  if (db.prepare('SELECT 1 FROM departments WHERE code = ?').get(code)) throw new HttpError(409, `${code} already exists.`)
-  db.prepare('INSERT INTO departments (code, name) VALUES (?,?)').run(code, name)
-  audit(req.user, 'department.create', 'department', code, name)
+  if ((await db.prepare('SELECT 1 FROM departments WHERE code = ?').get(code))) throw new HttpError(409, `${code} already exists.`)
+  await db.prepare('INSERT INTO departments (code, name) VALUES (?,?)').run(code, name)
+  await audit(req.user, 'department.create', 'department', code, name)
   res.status(201).json({ ok: true })
 })
 
-router.put('/departments/:id', (req, res) => {
+router.put('/departments/:id', async (req, res) => {
   const { code, name } = codeName(req.body, 'Department')
-  if (db.prepare('SELECT 1 FROM departments WHERE code = ? AND id <> ?').get(code, req.params.id)) throw new HttpError(409, `${code} already exists.`)
-  const info = db.prepare('UPDATE departments SET code = ?, name = ? WHERE id = ?').run(code, name, req.params.id)
+  if ((await db.prepare('SELECT 1 FROM departments WHERE code = ? AND id <> ?').get(code, req.params.id))) throw new HttpError(409, `${code} already exists.`)
+  const info = await db.prepare('UPDATE departments SET code = ?, name = ? WHERE id = ?').run(code, name, req.params.id)
   if (!info.changes) throw new HttpError(404, 'Department not found.')
-  audit(req.user, 'department.update', 'department', code, name)
+  await audit(req.user, 'department.update', 'department', code, name)
   res.json({ ok: true })
 })
 
-router.delete('/departments/:id', (req, res) => {
-  const d = db.prepare('SELECT code FROM departments WHERE id = ?').get(req.params.id)
+router.delete('/departments/:id', async (req, res) => {
+  const d = await db.prepare('SELECT code FROM departments WHERE id = ?').get(req.params.id)
   if (!d) throw new HttpError(404, 'Department not found.')
-  const used = db.prepare('SELECT (SELECT COUNT(*) FROM students WHERE department_id = ?) + (SELECT COUNT(*) FROM users WHERE department_id = ?) AS c').get(req.params.id, req.params.id).c
+  const used = (await db.prepare('SELECT (SELECT COUNT(*) FROM students WHERE department_id = ?) + (SELECT COUNT(*) FROM users WHERE department_id = ?) AS c').get(req.params.id, req.params.id)).c
   if (used) throw new HttpError(409, 'This department still has students or staff. Reassign them first.')
-  db.prepare('DELETE FROM departments WHERE id = ?').run(req.params.id)
-  audit(req.user, 'department.delete', 'department', d.code)
+  await db.prepare('DELETE FROM departments WHERE id = ?').run(req.params.id)
+  await audit(req.user, 'department.delete', 'department', d.code)
   res.json({ ok: true })
 })
 
-router.post('/programs', (req, res) => {
+router.post('/programs', async (req, res) => {
   const { code, name } = codeName(req.body, 'Program')
   const departmentId = Number(req.body?.departmentId)
-  if (!db.prepare('SELECT 1 FROM departments WHERE id = ?').get(departmentId)) throw new HttpError(400, 'Choose a department.')
-  if (db.prepare('SELECT 1 FROM programs WHERE code = ?').get(code)) throw new HttpError(409, `${code} already exists.`)
-  db.prepare('INSERT INTO programs (department_id, code, name) VALUES (?,?,?)').run(departmentId, code, name)
-  audit(req.user, 'program.create', 'program', code, name)
+  if (!(await db.prepare('SELECT 1 FROM departments WHERE id = ?').get(departmentId))) throw new HttpError(400, 'Choose a department.')
+  if ((await db.prepare('SELECT 1 FROM programs WHERE code = ?').get(code))) throw new HttpError(409, `${code} already exists.`)
+  await db.prepare('INSERT INTO programs (department_id, code, name) VALUES (?,?,?)').run(departmentId, code, name)
+  await audit(req.user, 'program.create', 'program', code, name)
   res.status(201).json({ ok: true })
 })
 
-router.put('/programs/:id', (req, res) => {
+router.put('/programs/:id', async (req, res) => {
   const { code, name } = codeName(req.body, 'Program')
-  if (db.prepare('SELECT 1 FROM programs WHERE code = ? AND id <> ?').get(code, req.params.id)) throw new HttpError(409, `${code} already exists.`)
-  const info = db.prepare('UPDATE programs SET code = ?, name = ? WHERE id = ?').run(code, name, req.params.id)
+  if ((await db.prepare('SELECT 1 FROM programs WHERE code = ? AND id <> ?').get(code, req.params.id))) throw new HttpError(409, `${code} already exists.`)
+  const info = await db.prepare('UPDATE programs SET code = ?, name = ? WHERE id = ?').run(code, name, req.params.id)
   if (!info.changes) throw new HttpError(404, 'Program not found.')
-  audit(req.user, 'program.update', 'program', code, name)
+  await audit(req.user, 'program.update', 'program', code, name)
   res.json({ ok: true })
 })
 
-router.delete('/programs/:id', (req, res) => {
-  const p = db.prepare('SELECT code FROM programs WHERE id = ?').get(req.params.id)
-  db.prepare('DELETE FROM programs WHERE id = ?').run(req.params.id)
-  if (p) audit(req.user, 'program.delete', 'program', p.code)
+router.delete('/programs/:id', async (req, res) => {
+  const p = await db.prepare('SELECT code FROM programs WHERE id = ?').get(req.params.id)
+  await db.prepare('DELETE FROM programs WHERE id = ?').run(req.params.id)
+  if (p) await audit(req.user, 'program.delete', 'program', p.code)
   res.json({ ok: true })
 })
 
@@ -228,13 +228,13 @@ const SETTING_RULES = {
   maxCopies: { label: 'Maximum copies per document request', type: 'number', check: (v) => Number.isInteger(+v) && +v >= 1 && +v <= 20, hint: 'Whole number, 1–20' },
 }
 
-router.get('/settings', (_req, res) => {
+router.get('/settings', async (_req, res) => {
   res.json({
-    settings: Object.entries(SETTING_RULES).map(([key, r]) => ({ key, label: r.label, type: r.type, hint: r.hint, value: getSetting(key), default: SETTING_DEFAULTS[key] })),
+    settings: (await Promise.all(Object.entries(SETTING_RULES).map(async ([key, r]) => ({ key, label: r.label, type: r.type, hint: r.hint, value: (await getSetting(key)), default: SETTING_DEFAULTS[key] })))),
   })
 })
 
-router.put('/settings', (req, res) => {
+router.put('/settings', async (req, res) => {
   const values = req.body?.values ?? {}
   const changed = []
   for (const [key, raw] of Object.entries(values)) {
@@ -243,49 +243,49 @@ router.put('/settings', (req, res) => {
     if (typeof raw !== 'string' && typeof raw !== 'number') throw new HttpError(400, `${rule.label}: enter a single value.`)
     const value = String(raw).trim()
     if (!rule.check(value)) throw new HttpError(400, `${rule.label}: ${rule.hint}.`)
-    if (value !== getSetting(key)) {
-      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
+    if (value !== (await getSetting(key))) {
+      await db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value)
       changed.push(`${key} = ${value}`)
     }
   }
-  if (changed.length) audit(req.user, 'settings.update', 'settings', null, changed.join('; '))
+  if (changed.length) await audit(req.user, 'settings.update', 'settings', null, changed.join('; '))
   res.json({ ok: true, changed: changed.length })
 })
 
 // ---- academic terms ----------------------------------------------------------------------------------------------
-router.get('/terms', (_req, res) => {
+router.get('/terms', async (_req, res) => {
   res.json({
-    terms: db
+    terms: (await db
       .prepare('SELECT id, school_year AS schoolYear, semester, is_current AS isCurrent FROM terms ORDER BY school_year DESC, semester')
-      .all()
+      .all())
       .map((t) => ({ ...t, isCurrent: !!t.isCurrent, label: termLabel({ school_year: t.schoolYear, semester: t.semester }) })),
   })
 })
 
-router.post('/terms', (req, res) => {
+router.post('/terms', async (req, res) => {
   const schoolYear = String(req.body?.schoolYear ?? '').trim()
   const semester = String(req.body?.semester ?? '').trim()
   if (!/^\d{4}-\d{4}$/.test(schoolYear)) throw new HttpError(400, 'School year must look like 2026-2027.')
   if (!['First Semester', 'Second Semester', 'Summer'].includes(semester)) throw new HttpError(400, 'Choose a semester.')
-  if (db.prepare('SELECT 1 FROM terms WHERE school_year = ? AND semester = ?').get(schoolYear, semester)) throw new HttpError(409, 'That term already exists.')
-  db.prepare('INSERT INTO terms (school_year, semester) VALUES (?,?)').run(schoolYear, semester)
-  audit(req.user, 'term.create', 'term', `${schoolYear} ${semester}`)
+  if ((await db.prepare('SELECT 1 FROM terms WHERE school_year = ? AND semester = ?').get(schoolYear, semester))) throw new HttpError(409, 'That term already exists.')
+  await db.prepare('INSERT INTO terms (school_year, semester) VALUES (?,?)').run(schoolYear, semester)
+  await audit(req.user, 'term.create', 'term', `${schoolYear} ${semester}`)
   res.status(201).json({ ok: true })
 })
 
-router.put('/terms/current', (req, res) => {
+router.put('/terms/current', async (req, res) => {
   const id = Number(req.body?.termId)
-  if (!db.prepare('SELECT 1 FROM terms WHERE id = ?').get(id)) throw new HttpError(404, 'Term not found.')
-  transaction(() => {
-    db.exec('UPDATE terms SET is_current = 0')
-    db.prepare('UPDATE terms SET is_current = 1 WHERE id = ?').run(id)
+  if (!(await db.prepare('SELECT 1 FROM terms WHERE id = ?').get(id))) throw new HttpError(404, 'Term not found.')
+  await transaction(async () => {
+    await db.exec('UPDATE terms SET is_current = 0')
+    await db.prepare('UPDATE terms SET is_current = 1 WHERE id = ?').run(id)
   })
-  audit(req.user, 'term.current', 'term', id)
+  await audit(req.user, 'term.current', 'term', id)
   res.json({ ok: true })
 })
 
 // ---- audit log ---------------------------------------------------------------------------------------------------
-router.get('/login-attempts', (req, res) => {
+router.get('/login-attempts', async (req, res) => {
   const { q, result } = req.query
   const where = []
   const params = []
@@ -300,15 +300,15 @@ router.get('/login-attempts', (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
   const offset = Math.max(Number(req.query.offset) || 0, 0)
   res.json({
-    total: db.prepare(`SELECT COUNT(*) AS c FROM login_attempts ${clause}`).get(...params).c,
-    failed24h: db.prepare('SELECT COUNT(*) AS c FROM login_attempts WHERE success = 0 AND created_at >= ?').get(new Date(Date.now() - 86400000).toISOString()).c,
-    rows: db
+    total: (await db.prepare(`SELECT COUNT(*) AS c FROM login_attempts ${clause}`).get(...params)).c,
+    failed24h: (await db.prepare('SELECT COUNT(*) AS c FROM login_attempts WHERE success = 0 AND created_at >= ?').get(new Date(Date.now() - 86400000).toISOString())).c,
+    rows: (await db
       .prepare(`SELECT id, login_id AS loginId, role, success, reason, ip, created_at AS createdAt FROM login_attempts ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`)
-      .all(...params, limit, offset),
+      .all(...params, limit, offset)),
   })
 })
 
-router.get('/audit', (req, res) => {
+router.get('/audit', async (req, res) => {
   const { q, role } = req.query
   const where = []
   const params = []
@@ -325,10 +325,10 @@ router.get('/audit', (req, res) => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
   const offset = Math.max(Number(req.query.offset) || 0, 0)
   res.json({
-    total: db.prepare(`SELECT COUNT(*) AS c FROM audit_log ${clause}`).get(...params).c,
-    rows: db
+    total: (await db.prepare(`SELECT COUNT(*) AS c FROM audit_log ${clause}`).get(...params)).c,
+    rows: (await db
       .prepare(`SELECT id, actor, role, action, entity, entity_id AS entityId, detail, created_at AS createdAt FROM audit_log ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`)
-      .all(...params, limit, offset),
+      .all(...params, limit, offset)),
   })
 })
 
@@ -371,19 +371,19 @@ router.get('/permissions', (_req, res) => {
 })
 
 // ---- reports ---------------------------------------------------------------------------------------------------------------
-router.get('/reports', (req, res) => {
+router.get('/reports', async (req, res) => {
   const period = ['today', 'week', 'month', 'all'].includes(req.query.period) ? req.query.period : 'week'
   const builders = {
-    system: () => systemReport(),
-    documents: () => documentsReport(period),
-    enrollment: () => enrollmentReport(),
-    clearance: () => clearanceReport(),
-    queue: () => queueReport(period),
-    collections: () => collectionsReport(period),
+    system: async () => await systemReport(),
+    documents: async () => await documentsReport(period),
+    enrollment: async () => await enrollmentReport(),
+    clearance: async () => await clearanceReport(),
+    queue: async () => await queueReport(period),
+    collections: async () => await collectionsReport(period),
   }
   const build = builders[req.query.type ?? 'system']
   if (!build) throw new HttpError(400, 'Unknown report type.')
-  res.json(build())
+  res.json(await build())
 })
 
 export default router

@@ -1,5 +1,5 @@
 // Unit tests for pure logic (no server). Run with:  npm test
-import { before, describe, test } from 'node:test'
+import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,11 +8,19 @@ import { join } from 'node:path'
 let util
 let requests
 
+let database
+
 before(async () => {
-  // util.js opens the database when imported, so point it at a throw-away file first
-  process.env.DB_FILE = join(mkdtempSync(join(tmpdir(), 'ssis-unit-')), 'unit.db')
+  // util.js opens the database when imported, so point it at a throw-away folder first
+  delete process.env.DATABASE_URL
+  process.env.DB_DIR = join(mkdtempSync(join(tmpdir(), 'ssis-unit-')), 'pg')
   util = await import('../server/util.js')
   requests = await import('../server/requests.js')
+  database = await import('../server/db.js')
+})
+
+after(async () => {
+  await database?.closeDb()
 })
 
 describe('grading', () => {

@@ -18,9 +18,9 @@ streamRouter.get('/', (req, res) => {
 })
 
 // ---- helpers ----------------------------------------------------------------------
-function loadThread(taskId, user) {
+async function loadThread(taskId, user) {
   if (!['student', 'teacher'].includes(user.role)) throw new HttpError(403, 'Comments are for students and teachers.')
-  const row = db
+  const row = await db
     .prepare(
       `SELECT t.id, t.student_id AS studentId, t.done, a.id AS activityId, a.title, a.teacher_id AS teacherId,
               s.code, s.description
@@ -31,19 +31,19 @@ function loadThread(taskId, user) {
   const allowed = row && (user.role === 'student' ? row.studentId === user.id : row.teacherId === user.id)
   if (!allowed) throw new HttpError(404, 'Conversation not found.')
   const peerId = user.role === 'student' ? row.teacherId : row.studentId
-  const peer = peerId ? db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(peerId) : null
+  const peer = peerId ? (await db.prepare('SELECT id, name, role FROM users WHERE id = ?').get(peerId)) : null
   return { row, peer }
 }
 
-const lastMessageId = (taskId) => db.prepare('SELECT COALESCE(MAX(id),0) AS id FROM task_messages WHERE task_id=?').get(taskId).id
-const readMark = (taskId, userId) =>
-  db.prepare('SELECT COALESCE(last_read_id,0) AS id FROM thread_reads WHERE task_id=? AND user_id=?').get(taskId, userId)?.id ?? 0
+const lastMessageId = async (taskId) => (await db.prepare('SELECT COALESCE(MAX(id),0) AS id FROM task_messages WHERE task_id=?').get(taskId)).id
+const readMark = async (taskId, userId) =>
+  (await db.prepare('SELECT COALESCE(last_read_id,0) AS id FROM thread_reads WHERE task_id=? AND user_id=?').get(taskId, userId))?.id ?? 0
 
-function markRead(taskId, user, peer) {
-  const last = lastMessageId(taskId)
-  const before = readMark(taskId, user.id)
+async function markRead(taskId, user, peer) {
+  const last = await lastMessageId(taskId)
+  const before = await readMark(taskId, user.id)
   if (last <= before) return
-  db.prepare(
+  await db.prepare(
     `INSERT INTO thread_reads (task_id, user_id, last_read_id) VALUES (?,?,?)
      ON CONFLICT(task_id, user_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
   ).run(taskId, user.id, last)
@@ -67,25 +67,25 @@ const cleanBody = (value) => {
   return body
 }
 
-const messageById = (id) => shapeMessage(db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM task_messages m WHERE m.id = ?`).get(id))
+const messageById = async (id) => shapeMessage((await db.prepare(`SELECT ${MESSAGE_COLUMNS} FROM task_messages m WHERE m.id = ?`).get(id)))
 
-export const unreadTotal = (userId) =>
-  db
+export const unreadTotal = async (userId) =>
+  (await db
     .prepare(
       `SELECT COALESCE(SUM(${UNREAD_IN_TASK}), 0) AS c
        FROM tasks t JOIN activities a ON a.id = t.activity_id
        WHERE t.student_id = ? OR a.teacher_id = ?`,
     )
-    .get(userId, userId, userId, userId).c
+    .get(userId, userId, userId, userId)).c
 
 // ---- routes (students & teachers) ------------------------------------------------------
 export const messagesRouter = Router()
 
-messagesRouter.get('/messages/unread', auth, (req, res) => res.json({ unread: unreadTotal(req.user.id) }))
+messagesRouter.get('/messages/unread', auth, async (req, res) => res.json({ unread: (await unreadTotal(req.user.id)) }))
 
-messagesRouter.get('/messages/inbox', auth, (req, res) => {
+messagesRouter.get('/messages/inbox', auth, async (req, res) => {
   if (!['student', 'teacher'].includes(req.user.role)) throw new HttpError(403, 'Comments are for students and teachers.')
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT t.id AS taskId, a.title, s.code, t.student_id AS studentId, a.teacher_id AS teacherId,
               us.name AS studentName, ut.name AS teacherName,
@@ -122,15 +122,15 @@ messagesRouter.get('/messages/inbox', auth, (req, res) => {
   })
 })
 
-messagesRouter.get('/tasks/:id/messages', auth, (req, res) => {
+messagesRouter.get('/tasks/:id/messages', auth, async (req, res) => {
   const taskId = Number(req.params.id)
-  const { row, peer } = loadThread(taskId, req.user)
-  const messages = db
+  const { row, peer } = await loadThread(taskId, req.user)
+  const messages = (await db
     .prepare(`SELECT ${MESSAGE_COLUMNS} FROM task_messages m WHERE m.task_id = ? ORDER BY m.id`)
-    .all(taskId)
+    .all(taskId))
     .map(shapeMessage)
-  const peerLastRead = peer ? readMark(taskId, peer.id) : 0
-  markRead(taskId, req.user, peer)
+  const peerLastRead = peer ? (await readMark(taskId, peer.id)) : 0
+  await markRead(taskId, req.user, peer)
   res.json({
     task: { id: row.id, title: row.title, code: row.code, description: row.description, done: !!row.done },
     me: req.user.id,
@@ -140,20 +140,20 @@ messagesRouter.get('/tasks/:id/messages', auth, (req, res) => {
   })
 })
 
-messagesRouter.post('/tasks/:id/messages', auth, (req, res) => {
+messagesRouter.post('/tasks/:id/messages', auth, async (req, res) => {
   const taskId = Number(req.params.id)
-  const { row, peer } = loadThread(taskId, req.user)
+  const { row, peer } = await loadThread(taskId, req.user)
   if (!peer) throw new HttpError(409, 'There is nobody to send this to yet.')
   const body = cleanBody(req.body?.body)
   rateLimit(req.user.id)
 
-  const created = db
+  const created = await db
     .prepare('INSERT INTO task_messages (task_id, sender_id, body, created_at) VALUES (?,?,?,?) RETURNING id')
     .get(taskId, req.user.id, body, nowIso())
-  const message = messageById(created.id)
+  const message = await messageById(created.id)
 
   // sending counts as having read everything up to here
-  db.prepare(
+  await db.prepare(
     `INSERT INTO thread_reads (task_id, user_id, last_read_id) VALUES (?,?,?)
      ON CONFLICT(task_id, user_id) DO UPDATE SET last_read_id = excluded.last_read_id`,
   ).run(taskId, req.user.id, message.id)
@@ -162,46 +162,46 @@ messagesRouter.post('/tasks/:id/messages', auth, (req, res) => {
   publish(peer.id, { type: 'message', message })
 
   const link = peer.role === 'teacher' ? `/teacher/messages?task=${taskId}` : `/tasks/${taskId}`
-  const alreadyUnread = db.prepare('SELECT 1 FROM notifications WHERE user_id=? AND link=? AND is_read=0').get(peer.id, link)
-  if (!alreadyUnread) notify(peer.id, `${req.user.name} commented on “${row.title}”.`, link)
+  const alreadyUnread = await db.prepare('SELECT 1 FROM notifications WHERE user_id=? AND link=? AND is_read=0').get(peer.id, link)
+  if (!alreadyUnread) await notify(peer.id, `${req.user.name} commented on “${row.title}”.`, link)
 
   res.status(201).json({ message })
 })
 
 // lightweight "I'm looking at this thread" call (used when a message arrives while the chat is open)
-messagesRouter.post('/tasks/:id/read', auth, (req, res) => {
+messagesRouter.post('/tasks/:id/read', auth, async (req, res) => {
   const taskId = Number(req.params.id)
-  const { peer } = loadThread(taskId, req.user)
-  markRead(taskId, req.user, peer)
+  const { peer } = await loadThread(taskId, req.user)
+  await markRead(taskId, req.user, peer)
   res.json({ ok: true })
 })
 
-messagesRouter.post('/tasks/:id/typing', auth, (req, res) => {
-  const { peer } = loadThread(Number(req.params.id), req.user)
+messagesRouter.post('/tasks/:id/typing', auth, async (req, res) => {
+  const { peer } = await loadThread(Number(req.params.id), req.user)
   if (peer) publish(peer.id, { type: 'typing', taskId: Number(req.params.id), userId: req.user.id })
   res.json({ ok: true })
 })
 
-function ownMessage(id, user) {
-  const msg = db.prepare('SELECT * FROM task_messages WHERE id = ?').get(id)
+async function ownMessage(id, user) {
+  const msg = await db.prepare('SELECT * FROM task_messages WHERE id = ?').get(id)
   if (!msg || msg.sender_id !== user.id || msg.deleted_at) throw new HttpError(404, 'Message not found.')
-  const { peer } = loadThread(msg.task_id, user)
+  const { peer } = await loadThread(msg.task_id, user)
   return { msg, peer }
 }
 
-messagesRouter.patch('/messages/:id', auth, (req, res) => {
-  const { msg, peer } = ownMessage(Number(req.params.id), req.user)
-  db.prepare('UPDATE task_messages SET body=?, edited_at=? WHERE id=?').run(cleanBody(req.body?.body), nowIso(), msg.id)
-  const message = messageById(msg.id)
+messagesRouter.patch('/messages/:id', auth, async (req, res) => {
+  const { msg, peer } = await ownMessage(Number(req.params.id), req.user)
+  await db.prepare('UPDATE task_messages SET body=?, edited_at=? WHERE id=?').run(cleanBody(req.body?.body), nowIso(), msg.id)
+  const message = await messageById(msg.id)
   publish(req.user.id, { type: 'message-updated', message })
   if (peer) publish(peer.id, { type: 'message-updated', message })
   res.json({ message })
 })
 
-messagesRouter.delete('/messages/:id', auth, (req, res) => {
-  const { msg, peer } = ownMessage(Number(req.params.id), req.user)
-  db.prepare('UPDATE task_messages SET deleted_at=? WHERE id=?').run(nowIso(), msg.id)
-  const message = messageById(msg.id)
+messagesRouter.delete('/messages/:id', auth, async (req, res) => {
+  const { msg, peer } = await ownMessage(Number(req.params.id), req.user)
+  await db.prepare('UPDATE task_messages SET deleted_at=? WHERE id=?').run(nowIso(), msg.id)
+  const message = await messageById(msg.id)
   publish(req.user.id, { type: 'message-updated', message })
   if (peer) {
     publish(peer.id, { type: 'message-updated', message })

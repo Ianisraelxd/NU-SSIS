@@ -63,7 +63,7 @@ All screenshots use the seeded demo data (fictional people).
 
 ## Quick start
 
-**Requirements:** [Node.js](https://nodejs.org) **22.13 or newer** (tested on Node 26) and npm. No database server is needed — SQLite is built into Node.
+**Requirements:** [Node.js](https://nodejs.org) **22.13 or newer** (tested on Node 26) and npm. No database server is needed to try it: an embedded PostgreSQL starts by itself. To use [Neon](https://neon.tech) or your own PostgreSQL, see [Database](#database-embedded-postgresql-or-neon).
 
 ```bash
 git clone https://github.com/Ianisraelxd/NU-SSIS.git
@@ -76,12 +76,10 @@ Open **http://localhost:5173**. `npm run dev` starts two processes:
 
 | Process | Address | What it is |
 | --- | --- | --- |
-| `api` | http://localhost:3001 | Express API + SQLite database |
+| `api` | http://localhost:3001 | Express API + PostgreSQL (embedded, or Neon when `DATABASE_URL` is set) |
 | `web` | http://localhost:5173 | Vite dev server (proxies `/api` to the API) |
 
-On first start the database is created at `server/data/nu-ssis.db` and filled with demo data. `npm run db:reset` wipes it and starts fresh.
-
-> **Upgrading from an older version:** if the database format is older, the old file is kept as `server/data/nu-ssis.backup-<time>.db` and a fresh seeded database is created. Real migrations are on the roadmap (see [`docs/12`](docs/12-master-spec-gap-analysis.md)).
+On first start the tables are created and filled with demo data. `npm run db:reset` wipes the database and starts fresh.
 
 ### Sign-in pages
 
@@ -94,6 +92,52 @@ On first start the database is created at `server/data/nu-ssis.db` and filled wi
 | Admin | `/admin/login` |
 
 Each page links to the others.
+
+## Database: embedded PostgreSQL or Neon
+
+The app talks to **PostgreSQL**. Which server it uses depends on one setting:
+
+| `DATABASE_URL` | What runs | Use it for |
+| --- | --- | --- |
+| not set | An **embedded PostgreSQL** (PGlite) stored in `server/data/pglite` | Local development and tests — nothing to install |
+| set | Your PostgreSQL server, for example **[Neon](https://neon.tech)** | A shared or live deployment |
+
+Both run the same SQL, so what works locally works on Neon.
+
+### Use Neon
+
+1. Create a free project at [neon.tech](https://neon.tech) and choose a region close to your users.
+2. In the Neon dashboard open **Connect** and copy the connection string. Prefer the **pooled** one (the host contains `-pooler`).
+3. Create a file named `.env` in the project folder (it is git-ignored, so the password never reaches GitHub):
+
+   ```
+   DATABASE_URL=postgresql://USER:PASSWORD@ep-xxxx-pooler.REGION.aws.neon.tech/neondb?sslmode=require
+   ```
+
+4. Run `npm run dev`. The tables are created on first start and the demo data is loaded when the database is empty.
+
+`.env` is read automatically by `npm run dev` and `npm start`. Neon may pause an idle free database, so the first request after a break can take a moment.
+
+### Move your existing data (from the old SQLite file)
+
+Earlier versions kept everything in `server/data/nu-ssis.db`. To bring that data into PostgreSQL, run this **before the first start** against the new, empty database:
+
+```bash
+node --env-file-if-exists=.env scripts/migrate-sqlite-to-postgres.mjs server/data/nu-ssis.db
+```
+
+It copies every table in one transaction, keeps ids and password hashes (so accounts, receipts and request numbers stay valid), checks the row counts, and never changes the old file.
+
+### Wipe and start over
+
+```bash
+npm run db:reset                 # embedded database: deletes server/data/pglite and reloads the demo data
+npm run db:reset -- --yes        # with DATABASE_URL set: DROPS every table on that server first — real data is lost
+```
+
+### Schema versions
+
+The tables are created automatically. If the database was made by a different schema version, the app **stops with a message and changes nothing** instead of dropping data — important for a hosted database. Use the commands above to start over or to migrate.
 
 ## Demo accounts
 
@@ -177,7 +221,7 @@ A failed sign-in shows how many tries are left (the message is the same for unkn
 ## Architecture
 
 ```
-Browser (React 19 + Vite) ──/api──► Express 5 ──► SQLite (node:sqlite, one file)
+Browser (React 19 + Vite) ──/api──► Express 5 ──► PostgreSQL (Neon, or embedded PGlite for local use)
 ```
 
 A modular monolith: one deployable app, clear modules, no extra infrastructure.
@@ -205,7 +249,7 @@ NU-SSIS/
 
 ### Database
 
-SQLite file with these groups of tables: **people** (`users`, `sessions`, `students`, `departments`, `programs`), **academics** (`terms`, `subjects`, `meetings`, `student_subjects`, `year_progress`, `enrollment_requests`, `enrollment_items`, `academic_requirements`), **money** (`fees`, `payments`), **services** (`doc_types`, `doc_requests`, `request_history`, `clearances`, `queue_tickets`), and **system** (`announcements`, `notifications`, `settings`, `audit_log`, `login_attempts`). Entity-relationship and 3NF notes are in [`docs/08-system-models.md`](docs/08-system-models.md). Open `server/data/nu-ssis.db` with any SQLite tool such as DB Browser for SQLite.
+PostgreSQL with these groups of tables: **people** (`users`, `sessions`, `students`, `departments`, `programs`), **academics** (`terms`, `subjects`, `meetings`, `student_subjects`, `year_progress`, `enrollment_requests`, `enrollment_items`, `academic_requirements`), **money** (`fees`, `payments`), **services** (`doc_types`, `doc_requests`, `request_history`, `clearances`, `queue_tickets`), and **system** (`announcements`, `notifications`, `settings`, `audit_log`, `login_attempts`). Entity-relationship and 3NF notes are in [`docs/08-system-models.md`](docs/08-system-models.md). The data layer is `server/db.js`: a small async API (`await db.prepare(sql).get(…)`), a connection pool for PostgreSQL, transactions, and advisory locks that keep queue and receipt numbers unique when requests overlap. Money and grades are `DOUBLE PRECISION`; ids are identity columns.
 
 ### API overview
 
@@ -227,7 +271,7 @@ All routes are under `/api`, JSON in and out, `Authorization: Bearer <token>` af
 ## Testing
 
 ```bash
-npm test                  # 62 automated tests on a throw-away database
+npm test                  # 64 automated tests on a throw-away embedded PostgreSQL
 node scripts/perf.mjs     # load test against a running server
 npm run lint
 ```
@@ -251,13 +295,18 @@ This is a school-project build. Before real use: change all demo passwords, serv
 | `npm run build` | Production build into `dist/` |
 | `npm start` | API that also serves `dist/` |
 | `npm test` | Automated tests |
-| `npm run db:reset` | Delete and re-seed the database |
+| `npm run db:reset` | Wipe and re-seed the database (`-- --yes` is required when `DATABASE_URL` is set) |
+| `npm run test:postgres` | Run the tests through the real `pg` driver (what Neon uses) |
 | `npm run lint` | Lint |
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `API_PORT` | `3001` | API / production port |
-| `DB_FILE` | `server/data/nu-ssis.db` | SQLite file path |
+| `DATABASE_URL` | *(empty)* | PostgreSQL connection string, e.g. from Neon. Empty = embedded database |
+| `DB_DIR` | `server/data/pglite` | Folder of the embedded database (used only when `DATABASE_URL` is empty) |
+| `DB_POOL_MAX` | `10` | Most simultaneous PostgreSQL connections |
+| `LOG_QUERIES` | *(off)* | `1` prints every SQL statement — handy for spotting slow pages |
+| `DB_LATENCY_MS` | *(off)* | e.g. `40` adds a delay to every statement to feel how the app behaves against a remote database |
 | `RATE_LIMIT` | `600` | API requests per minute per IP |
 | `ENABLE_LMS` / `VITE_ENABLE_LMS` | `false` | Optional LMS extras (Faculty portal, class activities, private comments). Outside the project scope; set **both** in `.env` to turn on. |
 
@@ -271,13 +320,15 @@ npm run build
 npm start        # http://localhost:3001 — API + the built website
 ```
 
-For a public URL, persistent storage and HTTPS, follow [`docs/11-deployment.md`](docs/11-deployment.md). Keep the database file on persistent storage and back it up.
+For a public URL, persistent storage and HTTPS, follow [`docs/11-deployment.md`](docs/11-deployment.md). The database lives in Neon (or any PostgreSQL), so the web host needs no persistent disk. Back the database up with Neon’s tools.
 
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
-| `node:sqlite` errors on start | Node is too old — install 22.13 or newer |
+| "The database has schema version … but this app needs version …" | The database was made by another version. Nothing was changed. Start over with `npm run db:reset -- --yes` or migrate with the script above |
+| Cannot connect to Neon | Check `DATABASE_URL` (copy it again from **Connect**), keep `?sslmode=require`, and make sure `.env` is in the project folder |
+| First request after a pause is slow | The Neon database was idle and is waking up; later requests are fast |
 | "Request failed (502)" in dev | The API isn't running; use `npm run dev`, not only `npm run web` |
 | "Port 5173 is in use" | Close the other dev server or stray `node` processes |
 | Can't sign in with a demo account | `npm run db:reset` |

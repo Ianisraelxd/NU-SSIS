@@ -3,11 +3,12 @@
 Covers the testing section of the paper: test types, test cases and security testing with at least three vulnerabilities. Run everything with:
 
 ```bash
-npm test                  # 60 automated tests (node:test)
+npm test                  # 64 automated tests (node:test)
+npm run test:postgres     # the same tests through the real pg driver (the path Neon uses)
 node scripts/perf.mjs     # load test against a running server
 ```
 
-Tests use a throw-away database (`DB_FILE`), so they never touch demo data.
+Tests use a throw-away embedded PostgreSQL (`DB_DIR`), so they never touch your data. `npm run test:postgres` runs the same tests through the real `pg` driver, and `TEST_DATABASE_URL` points them at any empty PostgreSQL (including a Neon branch).
 
 ## 9.1 Test levels
 
@@ -59,7 +60,7 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 
 | Measure | Result |
 | --- | --- |
-| Automated tests | 60 passed, 0 failed |
+| Automated tests | 64 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
 | Load test | _Paste the output of `node scripts/perf.mjs` here (requests/sec, p50, p95, errors)_ |
 
 ## 9.5 Defect log (template)
@@ -72,3 +73,22 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 | BUG-04 | Edge-case probe | An array was accepted as a new password | Low | Fixed, test added |
 | BUG-05 | Phone-width sweep of all 44 pages | Pending Tasks category filter overflowed the screen by 160 px at 375 px wide | Low | Fixed |
 | SEC-01 | Review of the new sign-in message | "N attempts left" appeared only for real accounts, revealing which IDs exist | Medium | Fixed (unknown IDs get the same countdown), test added |
+
+## 9.6 Move from SQLite to PostgreSQL (Neon) — how it was checked
+
+The database layer was changed from SQLite to PostgreSQL. These checks were run before the change was accepted:
+
+| Check | Result |
+| --- | --- |
+| Existing automated tests | All pass on the embedded PostgreSQL, through the real `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
+| New concurrency tests | Students taking queue numbers at the same moment, and cashiers recording payments at the same moment, always get different numbers. With the lock deliberately removed, the queue test **fails** (duplicate numbers such as C-007 twice) — so the test does guard the race |
+| API fuzz (about 3,900 calls, every route × every role) | 0 server errors; bad ids now return 4xx |
+| Side-by-side comparison with the old SQLite build, same demo data | 91 responses compared; no differences in values or data types. Rows that tie on a sort key now come back in a fixed order; one request that used to crash now returns 404 |
+| All 44 pages of the five portals, at desktop and phone width | No errors, no "undefined" or "NaN", no overflow |
+| Optional LMS routes (switched on) | Teacher and chat endpoints work |
+| Data migration script | Every table copied with matching row counts; old accounts still sign in; new rows continue the numbering (the next request after 134 migrated ones was REQ-0135) |
+| Speed (local PostgreSQL, 20 users at once) | p95 between 18 ms and 118 ms. With a simulated 40 ms network delay per query the busiest page (Home) answers in about 0.26 s |
+
+PostgreSQL differences found and fixed during the move: `INSERT OR IGNORE`, `SELECT DISTINCT` with an `ORDER BY` expression, a column alias used inside an expression, summing a true/false value, and case-sensitive `LIKE` (now `ILIKE`, which keeps the old search behaviour).
+
+Not yet tested: a real Neon project. The connection settings (TLS, pooled host) follow Neon's documentation, but the first run against a real Neon database should be checked by the team.
