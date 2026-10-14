@@ -11,27 +11,27 @@ const input = (body) => {
 
 // Post / edit / delete announcements. Mounted by both the Registrar and the Admin modules.
 export function mountAnnouncements(router) {
-  router.post('/announcements', (req, res) => {
+  router.post('/announcements', async (req, res) => {
     const [title, body] = input(req.body)
-    const row = db
+    const row = await db
       .prepare('INSERT INTO announcements (title, body, author_id, created_at) VALUES (?,?,?,?) RETURNING id')
       .get(title, body, req.user.id, nowIso())
-    notifyRoles('student', `New announcement: ${title}`, '/')
-    audit(req.user, 'announcement.create', 'announcement', row.id, title)
+    await notifyRoles('student', `New announcement: ${title}`, '/')
+    await audit(req.user, 'announcement.create', 'announcement', row.id, title)
     res.status(201).json({ id: row.id })
   })
 
-  router.put('/announcements/:id', (req, res) => {
+  router.put('/announcements/:id', async (req, res) => {
     const [title, body] = input(req.body)
-    const info = db.prepare('UPDATE announcements SET title=?, body=? WHERE id=?').run(title, body, req.params.id)
+    const info = await db.prepare('UPDATE announcements SET title=?, body=? WHERE id=?').run(title, body, req.params.id)
     if (!info.changes) throw new HttpError(404, 'Announcement not found.')
-    audit(req.user, 'announcement.update', 'announcement', req.params.id, title)
+    await audit(req.user, 'announcement.update', 'announcement', req.params.id, title)
     res.json({ ok: true })
   })
 
-  router.delete('/announcements/:id', (req, res) => {
-    db.prepare('DELETE FROM announcements WHERE id=?').run(req.params.id)
-    audit(req.user, 'announcement.delete', 'announcement', req.params.id)
+  router.delete('/announcements/:id', async (req, res) => {
+    await db.prepare('DELETE FROM announcements WHERE id=?').run(req.params.id)
+    await audit(req.user, 'announcement.delete', 'announcement', req.params.id)
     res.json({ ok: true })
   })
 }

@@ -31,10 +31,10 @@ import { requireAuth } from './auth.js'
 const router = Router()
 router.use(requireAuth('student'))
 
-const profile = (id) => db.prepare('SELECT * FROM students WHERE user_id=?').get(id)
+const profile = async (id) => await db.prepare('SELECT * FROM students WHERE user_id=?').get(id)
 
-function currentSubjects(studentId, termId) {
-  return db
+async function currentSubjects(studentId, termId) {
+  return await db
     .prepare(
       `SELECT s.id, s.code, s.description, s.units, ss.prelim, ss.midterm, ss.finals
        FROM student_subjects ss JOIN subjects s ON s.id = ss.subject_id
@@ -43,8 +43,8 @@ function currentSubjects(studentId, termId) {
     .all(studentId, termId)
 }
 
-function meetingsFor(studentId, termId) {
-  return db
+async function meetingsFor(studentId, termId) {
+  return await db
     .prepare(
       `SELECT m.id, m.subject_id AS subjectId, s.code, s.description, COALESCE(u.name, m.instructor) AS instructor, m.day,
               m.start_min AS startMin, m.end_min AS endMin, m.room
@@ -55,13 +55,13 @@ function meetingsFor(studentId, termId) {
     .all(studentId, termId)
 }
 
-function gwaFor(studentId, excludeTermId) {
-  const rows = db
+async function gwaFor(studentId, excludeTermId) {
+  const rows = (await db
     .prepare(
       `SELECT s.units, ss.prelim, ss.midterm, ss.finals FROM student_subjects ss
        JOIN subjects s ON s.id = ss.subject_id WHERE ss.student_id=? AND ss.term_id<>?`,
     )
-    .all(studentId, excludeTermId)
+    .all(studentId, excludeTermId))
     .map(gradeRow)
     .filter((r) => r.point != null)
   const units = rows.reduce((n, r) => n + r.units, 0)
@@ -70,8 +70,8 @@ function gwaFor(studentId, excludeTermId) {
 }
 
 // ---- profile -----------------------------------------------------------------------
-router.get('/profile', (req, res) => {
-  const me = db
+router.get('/profile', async (req, res) => {
+  const me = await db
     .prepare(
       `SELECT s.program, s.year_level AS yearLevel, s.section, s.standing, s.address, s.guardian_name AS guardianName,
               s.guardian_phone AS guardianPhone, s.verified_at AS verifiedAt, d.code AS departmentCode, d.name AS departmentName
@@ -81,11 +81,11 @@ router.get('/profile', (req, res) => {
   res.json({ ...me, verified: !!me.verifiedAt })
 })
 
-router.put('/profile', (req, res) => {
+router.put('/profile', async (req, res) => {
   const clean = (v, max) => String(v ?? '').trim().slice(0, max) || null
   const phone = clean(req.body?.guardianPhone, 20)
   if (phone && !/^[0-9+()\-\s]{7,20}$/.test(phone)) throw new HttpError(400, 'Enter a valid contact number.')
-  db.prepare('UPDATE students SET address = ?, guardian_name = ?, guardian_phone = ? WHERE user_id = ?').run(
+  await db.prepare('UPDATE students SET address = ?, guardian_name = ?, guardian_phone = ? WHERE user_id = ?').run(
     clean(req.body?.address, 200),
     clean(req.body?.guardianName, 80),
     phone,
@@ -96,10 +96,19 @@ router.put('/profile', (req, res) => {
 
 // ---- pending tasks (service to-dos) ---------------------------------------------
 // Things the student still has to do with the school's services.
-function serviceTodos(studentId) {
+async function serviceTodos(studentId) {
   const items = []
-  const { balance } = balanceFor(studentId)
-  const enroll = enrollmentState(studentId)
+  const [{ balance }, enroll, clearanceRows, docs] = await Promise.all([
+    balanceFor(studentId),
+    enrollmentState(studentId),
+    clearanceFor(studentId),
+    db
+      .prepare(
+        `SELECT r.id, r.status, r.total_fee AS fee, d.name FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
+       WHERE r.student_id = ? AND r.status IN ('For Payment','Ready for Release') ORDER BY r.updated_at, r.id`,
+      )
+      .all(studentId),
+  ])
 
   if (enroll.status === 'Returned')
     items.push({
@@ -135,7 +144,7 @@ function serviceTodos(studentId) {
       action: 'View enrollment',
     })
 
-  for (const c of clearanceFor(studentId)) {
+  for (const c of clearanceRows) {
     if (c.status === 'Cleared' || (c.office === 'Cashier' && balance > 0)) continue // balance has its own item
     items.push({
       id: `clearance-${c.id}`,
@@ -150,7 +159,7 @@ function serviceTodos(studentId) {
   }
 
   if (balance > 0) {
-    const next = db.prepare("SELECT due_on FROM payments WHERE student_id=? AND status='Due' ORDER BY due_on LIMIT 1").get(studentId)
+    const next = await db.prepare("SELECT due_on FROM payments WHERE student_id=? AND status='Due' ORDER BY due_on LIMIT 1").get(studentId)
     const daysLeft = next ? (new Date(`${next.due_on}T00:00:00`) - Date.now()) / 86400000 : null
     items.push({
       id: 'balance',
@@ -164,12 +173,6 @@ function serviceTodos(studentId) {
     })
   }
 
-  const docs = db
-    .prepare(
-      `SELECT r.id, r.status, r.total_fee AS fee, d.name FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
-       WHERE r.student_id = ? AND r.status IN ('For Payment','Ready for Release') ORDER BY r.updated_at`,
-    )
-    .all(studentId)
   for (const r of docs)
     items.push(
       r.status === 'For Payment'
@@ -199,30 +202,33 @@ function serviceTodos(studentId) {
   return items.sort((a, b) => rank[a.severity] - rank[b.severity] || String(a.dueDate ?? '9').localeCompare(String(b.dueDate ?? '9')))
 }
 
-router.get('/todo', (req, res) => {
+router.get('/todo', async (req, res) => {
   res.json({
-    term: termLabel(currentTerm()),
-    yearLevel: profile(req.user.id).year_level,
-    items: serviceTodos(req.user.id),
+    term: termLabel((await currentTerm())),
+    yearLevel: (await profile(req.user.id)).year_level,
+    items: (await serviceTodos(req.user.id)),
   })
 })
 
 // ---- home -------------------------------------------------------------------
-router.get('/home', (req, res) => {
-  const term = currentTerm()
-  const me = profile(req.user.id)
-  const pendingTasks = FEATURES.lms
-    ? db.prepare('SELECT COUNT(*) AS c FROM tasks WHERE student_id=? AND done=0').get(req.user.id).c
-    : serviceTodos(req.user.id).length
-  const { balance } = balanceFor(req.user.id)
-  const clearance = clearanceSummary(clearanceFor(req.user.id))
-  const enroll = enrollmentState(req.user.id)
-  const ticket = db
-    .prepare(`SELECT number, office, status FROM queue_tickets WHERE student_id = ? AND queue_date = ? AND status IN ('Waiting','Serving') ORDER BY id DESC LIMIT 1`)
-    .get(req.user.id, localDate())
+router.get('/home', async (req, res) => {
+  const term = await currentTerm()
+  const [me, pendingTasks, { balance }, clearanceRows, enroll, ticket, meetings] = await Promise.all([
+    profile(req.user.id),
+    FEATURES.lms
+      ? db.prepare('SELECT COUNT(*) AS c FROM tasks WHERE student_id=? AND done=0').get(req.user.id).then((r) => r.c)
+      : serviceTodos(req.user.id).then((items) => items.length),
+    balanceFor(req.user.id),
+    clearanceFor(req.user.id),
+    enrollmentState(req.user.id),
+    db
+      .prepare(`SELECT number, office, status FROM queue_tickets WHERE student_id = ? AND queue_date = ? AND status IN ('Waiting','Serving') ORDER BY id DESC LIMIT 1`)
+      .get(req.user.id, localDate()),
+    meetingsFor(req.user.id, term.id),
+  ])
+  const clearance = clearanceSummary(clearanceRows)
 
   // next class (today first, otherwise the next day with a class)
-  const meetings = meetingsFor(req.user.id, term.id)
   const now = new Date()
   const today = now.getDay()
   const minutes = now.getHours() * 60 + now.getMinutes()
@@ -245,13 +251,13 @@ router.get('/home', (req, res) => {
 })
 
 // ---- subjects / schedule ----------------------------------------------------
-router.get('/subjects', (req, res) => {
-  const term = currentTerm()
-  const subjects = currentSubjects(req.user.id, term.id)
-  const meetings = meetingsFor(req.user.id, term.id)
+router.get('/subjects', async (req, res) => {
+  const term = await currentTerm()
+  const subjects = await currentSubjects(req.user.id, term.id)
+  const meetings = await meetingsFor(req.user.id, term.id)
   res.json({
     term: termLabel(term),
-    yearLevel: profile(req.user.id).year_level,
+    yearLevel: (await profile(req.user.id)).year_level,
     subjects: subjects.map((s) => ({
       id: s.id,
       code: s.code,
@@ -262,12 +268,12 @@ router.get('/subjects', (req, res) => {
   })
 })
 
-router.get('/schedule', (req, res) => {
-  const term = currentTerm()
+router.get('/schedule', async (req, res) => {
+  const term = await currentTerm()
   res.json({
     term: termLabel(term),
-    yearLevel: profile(req.user.id).year_level,
-    meetings: meetingsFor(req.user.id, term.id),
+    yearLevel: (await profile(req.user.id)).year_level,
+    meetings: (await meetingsFor(req.user.id, term.id)),
   })
 })
 
@@ -282,51 +288,51 @@ const TASK_SELECT = `
   JOIN subjects s ON s.id = a.subject_id
   LEFT JOIN users u ON u.id = a.teacher_id`
 
-router.get('/tasks', (req, res) => {
-  const term = currentTerm()
-  const tasks = db
+router.get('/tasks', async (req, res) => {
+  const term = await currentTerm()
+  const tasks = await db
     .prepare(`${TASK_SELECT} WHERE t.student_id = ? ORDER BY t.done, a.due_at`)
     .all(req.user.id, req.user.id, req.user.id)
   res.json({
     term: termLabel(term),
-    yearLevel: profile(req.user.id).year_level,
+    yearLevel: (await profile(req.user.id)).year_level,
     tasks: tasks.map((t) => ({ ...t, done: !!t.done })),
   })
 })
 
-router.get('/tasks/:id', (req, res) => {
-  const task = db.prepare(`${TASK_SELECT} WHERE t.id = ? AND t.student_id = ?`).get(req.user.id, req.user.id, req.params.id, req.user.id)
+router.get('/tasks/:id', async (req, res) => {
+  const task = await db.prepare(`${TASK_SELECT} WHERE t.id = ? AND t.student_id = ?`).get(req.user.id, req.user.id, req.params.id, req.user.id)
   if (!task) throw new HttpError(404, 'Task not found.')
   res.json({
-    term: termLabel(currentTerm()),
-    yearLevel: profile(req.user.id).year_level,
+    term: termLabel((await currentTerm())),
+    yearLevel: (await profile(req.user.id)).year_level,
     task: { ...task, done: !!task.done },
   })
 })
 
-router.post('/tasks/:id/toggle', (req, res) => {
+router.post('/tasks/:id/toggle', async (req, res) => {
   const now = nowIso()
-  const info = db
+  const info = await db
     .prepare('UPDATE tasks SET done = 1 - done, done_at = CASE WHEN done = 0 THEN ? ELSE NULL END WHERE id=? AND student_id=?')
     .run(now, req.params.id, req.user.id)
   if (!info.changes) throw new HttpError(404, 'Task not found.')
-  const t = db
+  const t = await db
     .prepare('SELECT t.done, a.title, a.teacher_id AS teacherId FROM tasks t JOIN activities a ON a.id = t.activity_id WHERE t.id = ?')
     .get(req.params.id)
-  if (t.done && t.teacherId) notify(t.teacherId, `${req.user.name} marked “${t.title}” as done.`, '/teacher/activities')
+  if (t.done && t.teacherId) await notify(t.teacherId, `${req.user.name} marked “${t.title}” as done.`, '/teacher/activities')
   res.json({ ok: true, done: !!t.done })
 })
 
 // ---- academic tracker ---------------------------------------------------------
-router.get('/tracker', (req, res) => {
-  const term = currentTerm()
-  const me = profile(req.user.id)
-  const progress = db
+router.get('/tracker', async (req, res) => {
+  const term = await currentTerm()
+  const me = await profile(req.user.id)
+  const progress = await db
     .prepare('SELECT year, units_total AS total, units_earned AS earned FROM year_progress WHERE student_id=? ORDER BY year')
     .all(req.user.id)
   const earned = progress.reduce((n, p) => n + p.earned, 0)
   const total = progress.reduce((n, p) => n + p.total, 0)
-  const subjects = currentSubjects(req.user.id, term.id).map((s) => {
+  const subjects = (await currentSubjects(req.user.id, term.id)).map((s) => {
     const parts = [s.prelim, s.midterm, s.finals].filter((v) => v != null)
     const average = parts.length ? parts.reduce((a, b) => a + b, 0) / parts.length : null
     return {
@@ -341,7 +347,7 @@ router.get('/tracker', (req, res) => {
   res.json({
     term: termLabel(term),
     yearLevel: me.year_level,
-    gwa: gwaFor(req.user.id, term.id),
+    gwa: (await gwaFor(req.user.id, term.id)),
     unitsEarned: earned,
     unitsRemaining: total - earned,
     standing: me.standing,
@@ -351,30 +357,30 @@ router.get('/tracker', (req, res) => {
 })
 
 // ---- grades ---------------------------------------------------------------------
-router.get('/grades', (req, res) => {
-  const current = currentTerm()
-  const terms = db
+router.get('/grades', async (req, res) => {
+  const current = await currentTerm()
+  const terms = (await db
     .prepare(
-      `SELECT DISTINCT t.id, t.school_year, t.semester, t.is_current FROM terms t
-       JOIN student_subjects ss ON ss.term_id = t.id WHERE ss.student_id = ?
+      `SELECT t.id, t.school_year, t.semester, t.is_current FROM terms t
+       JOIN student_subjects ss ON ss.term_id = t.id WHERE ss.student_id = ? GROUP BY t.id
        ORDER BY t.school_year DESC, CASE t.semester WHEN 'Second Semester' THEN 0 ELSE 1 END`,
     )
-    .all(req.user.id)
+    .all(req.user.id))
     .map((t) => ({ id: t.id, label: termLabel(t), isCurrent: !!t.is_current }))
   const termId = Number(req.query.term) || current.id
   const selected = terms.find((t) => t.id === termId) ?? terms[0] ?? { id: current.id, label: termLabel(current), isCurrent: true }
-  const rows = db
+  const rows = (await db
     .prepare(
       `SELECT s.code, s.description, s.units, ss.prelim, ss.midterm, ss.finals
        FROM student_subjects ss JOIN subjects s ON s.id = ss.subject_id
        WHERE ss.student_id=? AND ss.term_id=? ORDER BY s.code`,
     )
-    .all(req.user.id, selected.id)
+    .all(req.user.id, selected.id))
     .map(gradeRow)
   const graded = rows.filter((r) => r.point != null)
   const units = graded.reduce((n, r) => n + r.units, 0)
   res.json({
-    yearLevel: profile(req.user.id).year_level,
+    yearLevel: (await profile(req.user.id)).year_level,
     terms: terms.length ? terms : [selected],
     term: selected,
     rows,
@@ -385,9 +391,9 @@ router.get('/grades', (req, res) => {
 
 // ---- enrollment -------------------------------------------------------------------
 // Student selects subjects → Department reviews → Registrar approves → Cashier confirms payment.
-function availableSubjects(studentId) {
-  const dept = profile(studentId).department_id
-  return db
+async function availableSubjects(studentId) {
+  const dept = (await profile(studentId)).department_id
+  return await db
     .prepare(
       `SELECT id, code, description, units, year_level AS yearLevel FROM subjects
        WHERE offered = 1 AND (department_id IS NULL OR department_id = ?) ORDER BY code`,
@@ -395,13 +401,20 @@ function availableSubjects(studentId) {
     .all(dept)
 }
 
-router.get('/enrollment', (req, res) => {
-  const term = currentTerm()
-  const me = profile(req.user.id)
-  const st = enrollmentState(req.user.id)
-  const selected = st.request ? db.prepare('SELECT subject_id AS id FROM enrollment_items WHERE request_id = ?').all(st.request.id).map((r) => r.id) : []
-  const available = availableSubjects(req.user.id)
-  const approvedUnits = currentSubjects(req.user.id, term.id).reduce((n, s) => n + s.units, 0)
+router.get('/enrollment', async (req, res) => {
+  const term = await currentTerm()
+  const [me, st, available, approved, maxUnits, minPercent, percent, money] = await Promise.all([
+    profile(req.user.id),
+    enrollmentState(req.user.id),
+    availableSubjects(req.user.id),
+    currentSubjects(req.user.id, term.id),
+    getNumber('maxUnits'),
+    getNumber('minPaymentPercent'),
+    paidPercent(req.user.id),
+    balanceFor(req.user.id),
+  ])
+  const selected = st.request ? (await db.prepare('SELECT subject_id AS id FROM enrollment_items WHERE request_id = ?').all(st.request.id)).map((r) => r.id) : []
+  const approvedUnits = approved.reduce((n, s) => n + s.units, 0)
   const pickedUnits = available.filter((s) => selected.includes(s.id)).reduce((n, s) => n + s.units, 0)
   res.json({
     term: termLabel(term),
@@ -416,51 +429,51 @@ router.get('/enrollment', (req, res) => {
     selected,
     available,
     canEdit: !st.request || ['Draft', 'Returned'].includes(st.request.status),
-    maxUnits: getNumber('maxUnits'),
-    payment: { percent: paidPercent(req.user.id), minPercent: getNumber('minPaymentPercent'), balance: balanceFor(req.user.id).balance },
+    maxUnits,
+    payment: { percent, minPercent, balance: money.balance },
   })
 })
 
-router.put('/enrollment', (req, res) => {
-  const term = currentTerm()
-  const st = enrollmentState(req.user.id)
+router.put('/enrollment', async (req, res) => {
+  const term = await currentTerm()
+  const st = await enrollmentState(req.user.id)
   if (st.request && !['Draft', 'Returned'].includes(st.request.status))
     throw new HttpError(409, 'Your subjects were already submitted. They can only be changed if they are returned to you.')
 
   const ids = [...new Set((Array.isArray(req.body?.subjectIds) ? req.body.subjectIds : []).map(Number))]
-  const available = availableSubjects(req.user.id)
+  const available = await availableSubjects(req.user.id)
   const chosen = ids.map((id) => available.find((s) => s.id === id))
   if (chosen.some((s) => !s)) throw new HttpError(400, 'One of the selected subjects is not open for your program.')
   const units = chosen.reduce((n, s) => n + s.units, 0)
-  const max = getNumber('maxUnits')
+  const max = await getNumber('maxUnits')
   if (units > max) throw new HttpError(400, `You can enroll in at most ${max} units (you picked ${units}).`)
   const submit = !!req.body?.submit
   if (submit && !ids.length) throw new HttpError(400, 'Pick at least one subject before submitting.')
 
-  transaction(() => {
+  await transaction(async () => {
     let request = st.request
     if (!request)
-      request = db.prepare("INSERT INTO enrollment_requests (student_id, term_id, status) VALUES (?,?,'Draft') RETURNING *").get(req.user.id, term.id)
-    db.prepare('DELETE FROM enrollment_items WHERE request_id = ?').run(request.id)
+      request = await db.prepare("INSERT INTO enrollment_requests (student_id, term_id, status) VALUES (?,?,'Draft') RETURNING *").get(req.user.id, term.id)
+    await db.prepare('DELETE FROM enrollment_items WHERE request_id = ?').run(request.id)
     const insert = db.prepare('INSERT INTO enrollment_items (request_id, subject_id) VALUES (?,?)')
-    for (const id of ids) insert.run(request.id, id)
+    for (const id of ids) await insert.run(request.id, id)
     if (submit) {
-      db.prepare("UPDATE enrollment_requests SET status = 'For Department Review', remarks = NULL, submitted_at = ? WHERE id = ?").run(nowIso(), request.id)
+      await db.prepare("UPDATE enrollment_requests SET status = 'For Department Review', remarks = NULL, submitted_at = ? WHERE id = ?").run(nowIso(), request.id)
     }
   })
   if (submit) {
-    notifyRoles('department', `${req.user.name} submitted ${ids.length} subject${ids.length === 1 ? '' : 's'} for enrollment review.`, '/department/enrollment', profile(req.user.id).department_id)
-    audit(req.user, 'enrollment.submit', 'enrollment', req.user.login_id, `${ids.length} subjects, ${units} units`)
+    await notifyRoles('department', `${req.user.name} submitted ${ids.length} subject${ids.length === 1 ? '' : 's'} for enrollment review.`, '/department/enrollment', (await profile(req.user.id)).department_id)
+    await audit(req.user, 'enrollment.submit', 'enrollment', req.user.login_id, `${ids.length} subjects, ${units} units`)
   }
   res.json({ ok: true, submitted: submit, units })
 })
 
 // ---- e-clearance --------------------------------------------------------------------
-router.get('/clearance', (req, res) => {
-  const rows = clearanceFor(req.user.id)
+router.get('/clearance', async (req, res) => {
+  const rows = await clearanceFor(req.user.id)
   res.json({
-    term: termLabel(currentTerm()),
-    yearLevel: profile(req.user.id).year_level,
+    term: termLabel((await currentTerm())),
+    yearLevel: (await profile(req.user.id)).year_level,
     summary: clearanceSummary(rows),
     offices: rows.map((r) => ({ id: r.id, office: r.office, requirement: r.requirement, status: r.status, remarks: r.remarks })),
   })
@@ -473,92 +486,92 @@ const requestSelect = `
          d.name AS document
   FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id`
 
-router.get('/documents', (req, res) => {
-  const clearance = clearanceSummary(clearanceFor(req.user.id))
-  const types = db
+router.get('/documents', async (req, res) => {
+  const clearance = clearanceSummary((await clearanceFor(req.user.id)))
+  const types = (await db
     .prepare('SELECT id, name, fee, requirements, requires_clearance AS requiresClearance FROM doc_types WHERE active=1 ORDER BY id')
-    .all()
+    .all())
     .map((t) => ({ ...t, requiresClearance: !!t.requiresClearance }))
-  const requests = db
+  const requests = (await db
     .prepare(`${requestSelect} WHERE r.student_id=? ORDER BY r.created_at DESC, r.id DESC`)
-    .all(req.user.id)
+    .all(req.user.id))
     .map((r) => ({ ...r, requestNo: reqNo(r.id) }))
-  const history = db
+  const history = await db
     .prepare(
       `SELECT request_id AS requestId, status, note, created_at AS createdAt FROM request_history
        WHERE request_id IN (SELECT id FROM doc_requests WHERE student_id = ?) ORDER BY id`,
     )
     .all(req.user.id)
   res.json({
-    term: termLabel(currentTerm()),
-    yearLevel: profile(req.user.id).year_level,
+    term: termLabel((await currentTerm())),
+    yearLevel: (await profile(req.user.id)).year_level,
     clearance,
-    maxCopies: getNumber('maxCopies'),
+    maxCopies: (await getNumber('maxCopies')),
     types,
     requests: requests.map((r) => ({ ...r, history: history.filter((h) => h.requestId === r.id) })),
   })
 })
 
-router.post('/documents/requests', (req, res) => {
+router.post('/documents/requests', async (req, res) => {
   const { docTypeId, purpose, copies, pickupDate, remarks } = req.body ?? {}
-  const type = db.prepare('SELECT * FROM doc_types WHERE id=? AND active=1').get(Number.isInteger(Number(docTypeId)) ? Number(docTypeId) : 0)
+  const type = await db.prepare('SELECT * FROM doc_types WHERE id=? AND active=1').get(Number.isInteger(Number(docTypeId)) ? Number(docTypeId) : 0)
   if (!type) throw new HttpError(400, 'Choose a document type.')
   const count = Number(copies)
-  const maxCopies = getNumber('maxCopies')
+  const maxCopies = await getNumber('maxCopies')
   if (!Number.isInteger(count) || count < 1 || count > maxCopies) throw new HttpError(400, `Copies must be between 1 and ${maxCopies}.`)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(pickupDate ?? ''))) throw new HttpError(400, 'Choose a pickup date.')
   if (pickupDate < localDate()) throw new HttpError(400, 'Pickup date cannot be in the past.')
-  if (type.requires_clearance && !clearanceSummary(clearanceFor(req.user.id)).complete)
+  if (type.requires_clearance && !clearanceSummary((await clearanceFor(req.user.id))).complete)
     throw new HttpError(403, `${type.name} can only be requested once your E-Clearance is complete.`)
-  const duplicate = db
+  const duplicate = await db
     .prepare(`SELECT 1 FROM doc_requests WHERE student_id=? AND doc_type_id=? AND status IN (${DOC_OPEN.map(() => '?').join(',')})`)
     .get(req.user.id, type.id, ...DOC_OPEN)
   if (duplicate) throw new HttpError(409, `You already have an open request for ${type.name}.`)
 
   const now = nowIso()
-  const row = db
+  const row = await db
     .prepare(
       `INSERT INTO doc_requests (student_id, doc_type_id, purpose, copies, pickup_date, remarks, total_fee, status, created_at, updated_at)
        VALUES (?,?,?,?,?,?,?,'Pending',?,?) RETURNING id`,
     )
     .get(req.user.id, type.id, String(purpose ?? '').slice(0, 120) || null, count, pickupDate, String(remarks ?? '').slice(0, 500) || null, type.fee * count, now, now)
-  logRequest(row.id, 'Pending', 'Request submitted', req.user.id)
-  notifyRoles('registrar', `${req.user.name} requested ${type.name} (${reqNo(row.id)}).`, '/registrar/requests')
+  await logRequest(row.id, 'Pending', 'Request submitted', req.user.id)
+  await notifyRoles('registrar', `${req.user.name} requested ${type.name} (${reqNo(row.id)}).`, '/registrar/requests')
   res.status(201).json({ id: row.id, requestNo: reqNo(row.id), totalFee: type.fee * count })
 })
 
-router.post('/documents/requests/:id/cancel', (req, res) => {
-  const info = db
+router.post('/documents/requests/:id/cancel', async (req, res) => {
+  const info = await db
     .prepare("UPDATE doc_requests SET status='Cancelled', updated_at=? WHERE id=? AND student_id=? AND status IN ('Pending','For Payment')")
     .run(nowIso(), req.params.id, req.user.id)
   if (!info.changes) throw new HttpError(409, 'Only requests that are pending or waiting for payment can be cancelled.')
-  logRequest(Number(req.params.id), 'Cancelled', 'Cancelled by the student', req.user.id)
+  await logRequest(Number(req.params.id), 'Cancelled', 'Cancelled by the student', req.user.id)
   res.json({ ok: true })
 })
 
 // ---- account summary -----------------------------------------------------------------------
-router.get('/account', (req, res) => {
-  const term = currentTerm()
-  const fees = db.prepare('SELECT id, name, amount FROM fees WHERE student_id=? AND term_id=? ORDER BY id').all(req.user.id, term.id)
-  const payments = db
+router.get('/account', async (req, res) => {
+  const term = await currentTerm()
+  const fees = await db.prepare('SELECT id, name, amount FROM fees WHERE student_id=? AND term_id=? ORDER BY id').all(req.user.id, term.id)
+  const payments = await db
     .prepare(
       `SELECT id, due_on AS dueOn, reference, amount, status, method FROM payments
-       WHERE student_id=? AND term_id=? AND status <> 'Void' ORDER BY due_on`,
+       WHERE student_id=? AND term_id=? AND status <> 'Void' ORDER BY due_on, id`,
     )
     .all(req.user.id, term.id)
-  const documentPayments = db
+  const documentPayments = (await db
     .prepare(
       `SELECT r.id, d.name AS document, r.or_number AS orNumber, r.paid_amount AS amount, r.paid_at AS paidAt
        FROM doc_requests r JOIN doc_types d ON d.id = r.doc_type_id
-       WHERE r.student_id = ? AND r.paid_at IS NOT NULL ORDER BY r.paid_at DESC`,
+       WHERE r.student_id = ? AND r.paid_at IS NOT NULL ORDER BY r.paid_at DESC, r.id`,
     )
-    .all(req.user.id)
+    .all(req.user.id))
     .map((r) => ({ ...r, requestNo: reqNo(r.id) }))
-  const money = balanceFor(req.user.id)
+  const money = await balanceFor(req.user.id)
   const nextDue = payments.find((p) => p.status === 'Due' && money.balance > 0) ?? null
   res.json({
     term: termLabel(term),
-    yearLevel: profile(req.user.id).year_level,
+    yearLevel: (await profile(req.user.id)).year_level,
     ...money,
     nextDue: nextDue ? nextDue.dueOn : null,
     fees,

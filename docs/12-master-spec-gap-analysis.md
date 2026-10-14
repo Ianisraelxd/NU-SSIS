@@ -6,10 +6,10 @@ Response to the long "University School Services Information System" master prom
 
 | Item | State |
 | --- | --- |
-| Stack | React 19 + Vite, Express 5, SQLite (`node:sqlite`) — a modular monolith, which matches the spec's recommended starting point (Decision F) |
+| Stack | React 19 + Vite, Express 5, PostgreSQL (Neon; embedded PGlite for local use) — a modular monolith, which matches the spec's recommended starting point (Decision F) |
 | Modules | Student, Registrar, Cashier, Department, Admin portals; document requests; digital queue; audit log |
 | Security | scrypt hashing, 7-day sessions, account lockout, per-IP throttle, rate limit, parameterised SQL, role checks, CSP in production |
-| Tests | 61 automated tests (unit, API, security), load-test script |
+| Tests | 64 automated tests (unit, API, security), load-test script |
 | Added in this step | Global loading bar with a "slow connection" note, spinner on the sign-in button, **login-attempt log** (every attempt recorded; admin page *Login Attempts*), and "N attempts left" on failed sign-in |
 
 ### Login attempts — details

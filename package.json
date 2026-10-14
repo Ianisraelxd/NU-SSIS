@@ -10,17 +10,21 @@
     "build": "vite build",
     "start": "node --env-file-if-exists=.env server/index.js",
     "preview": "vite preview",
-    "db:reset": "node -e \"require('fs').rmSync('server/data',{recursive:true,force:true})\" && node server/index.js",
+    "db:reset": "node --env-file-if-exists=.env scripts/db-reset.mjs",
     "lint": "oxlint",
-    "test": "node --test tests/"
+    "test": "node --test tests/",
+    "test:postgres": "node scripts/test-postgres.mjs"
   },
   "dependencies": {
+    "@electric-sql/pglite": "^0.5.9",
     "express": "^5.2.1",
+    "pg": "^8.23.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.13",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",

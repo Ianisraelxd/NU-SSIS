@@ -2,7 +2,7 @@ import express from 'express'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import './db.js'
+import { closeDb } from './db.js'
 import { FEATURES } from './config.js'
 import { seedIfEmpty } from './seed.js'
 import authRoutes from './routes/auth.js'
@@ -16,7 +16,7 @@ import queueRoutes from './routes/queue.js'
 import teacherRoutes from './routes/teacher.js'
 import { messagesRouter, streamRouter } from './routes/messages.js'
 
-if (seedIfEmpty()) console.log('Database was empty — loaded demo data.')
+if ((await seedIfEmpty())) console.log('Database was empty — loaded demo data.')
 
 const app = express()
 app.disable('x-powered-by')
@@ -81,9 +81,22 @@ if (existsSync(dist)) {
 app.use((err, _req, res, _next) => {
   if (err.status) return res.status(err.status).json({ error: err.message })
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid request body.' })
+  // PostgreSQL error classes: bad input for a column type → 400, duplicate / referenced rows → 409
+  if (['22P02', '22003', '22001', '22007', '22008', '23514', '23502'].includes(err.code)) return res.status(400).json({ error: 'That value is not valid.' })
+  if (['23505', '23503'].includes(err.code)) return res.status(409).json({ error: 'That conflicts with an existing record.' })
   console.error(err)
   res.status(500).json({ error: 'Something went wrong on the server.' })
 })
 
 const port = Number(process.env.API_PORT) || 3001
-app.listen(port, () => console.log(`NU-SSIS API listening on http://localhost:${port}`))
+const server = app.listen(port, () => console.log(`NU-SSIS API listening on http://localhost:${port}`))
+
+// close the database cleanly when the host stops the app (deploys, restarts)
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => {
+    server.close()
+    closeDb()
+      .catch(() => {})
+      .finally(() => process.exit(0))
+  })
+}

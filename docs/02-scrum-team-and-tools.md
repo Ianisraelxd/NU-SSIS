@@ -32,7 +32,7 @@ From the team's Progress Report (October 5, 2026). Roles follow that report; the
 | UI design | **Figma** |
 | Scrum board | _To be confirmed — Trello, Jira or GitHub Projects._ Import [`product-backlog.csv`](product-backlog.csv) to create the cards. |
 | Documents | _Google Drive (or the team's shared drive)_ |
-| Technology | React 19 + Vite, Express 5, SQLite (`node:sqlite`) — see the root `README.md` |
+| Technology | React 19 + Vite, Express 5, PostgreSQL (Neon; embedded PGlite for local use) — see the root `README.md` |
 
 ## Scrum schedule
 

@@ -1,6 +1,6 @@
 // Simple load test: 400 requests per endpoint, 20 at a time.
 // Start a throw-away server first so the per-IP rate limit does not interfere:
-//   RATE_LIMIT=1000000 API_PORT=3098 DB_FILE=perf.db node server/index.js
+//   RATE_LIMIT=1000000 API_PORT=3098 DB_DIR=perf-db node server/index.js
 //   node scripts/perf.mjs
 const BASE = process.env.BASE ?? 'http://localhost:3098/api'
 const login = async (role, loginId, password) => (await (await fetch(`${BASE}/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role, loginId, password }) })).json()).token

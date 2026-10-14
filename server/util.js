@@ -1,5 +1,5 @@
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
-import { db } from './db.js'
+import { db, inTransaction } from './db.js'
 import { publish } from './realtime.js'
 
 export function hashPassword(password) {
@@ -22,6 +22,16 @@ export class HttpError extends Error {
 }
 
 export const nowIso = () => new Date().toISOString()
+
+// Run an async callback over each item one after another (rows are written in order).
+export const eachSeq = async (items, fn) => {
+  for (let i = 0; i < items.length; i++) await fn(items[i], i, items)
+}
+export const mapSeq = async (items, fn) => {
+  const out = []
+  for (let i = 0; i < items.length; i++) out.push(await fn(items[i], i, items))
+  return out
+}
 
 // ---- grading ---------------------------------------------------------------
 
@@ -60,32 +70,46 @@ export function gradeRow(row) {
   }
 }
 
-export function currentTerm() {
-  return db.prepare('SELECT * FROM terms WHERE is_current = 1').get()
+// A few rows (the current term, settings) are read on almost every request and change rarely. They are kept in memory
+// for a few seconds, which saves a database round trip each time; saving a setting or switching the term clears them.
+// Nothing is cached inside a transaction, so uncommitted values never leak into the cache.
+const cache = new Map()
+const CACHE_MS = 3000
+async function memo(key, load) {
+  if (inTransaction()) return load()
+  const hit = cache.get(key)
+  if (hit && hit.until > Date.now()) return hit.value
+  const value = await load()
+  cache.set(key, { value, until: Date.now() + CACHE_MS })
+  return value
+}
+export const clearCache = () => cache.clear()
+
+export async function currentTerm() {
+  return memo('term', () => db.prepare('SELECT * FROM terms WHERE is_current = 1').get())
 }
 
 export const termLabel = (t) => `A.Y. ${t.school_year}, ${t.semester}`
 
 // ---- money & clearance ------------------------------------------------------
 
-export function balanceFor(studentId) {
-  const term = currentTerm()
+export async function balanceFor(studentId) {
+  const term = await currentTerm()
   if (!term) return { assessed: 0, paid: 0, balance: 0 }
-  const assessed =
-    db.prepare('SELECT COALESCE(SUM(amount),0) AS v FROM fees WHERE student_id=? AND term_id=?').get(studentId, term.id).v
-  const paid =
-    db
-      .prepare("SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE student_id=? AND term_id=? AND status='Paid'")
-      .get(studentId, term.id).v
+  const [assessedRow, paidRow] = await Promise.all([
+    db.prepare('SELECT COALESCE(SUM(amount),0) AS v FROM fees WHERE student_id=? AND term_id=?').get(studentId, term.id),
+    db.prepare("SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE student_id=? AND term_id=? AND status='Paid'").get(studentId, term.id),
+  ])
+  const assessed = assessedRow.v
+  const paid = paidRow.v
   return { assessed, paid, balance: Math.max(assessed - paid, 0) }
 }
 
 export const peso = (n) => `₱${Number(n).toLocaleString('en-PH')}`
 
 // The cashier line is derived from the real balance so it can never disagree with Account Summary.
-export function clearanceFor(studentId) {
-  const rows = db.prepare('SELECT * FROM clearances WHERE student_id=? ORDER BY id').all(studentId)
-  const { balance } = balanceFor(studentId)
+export async function clearanceFor(studentId) {
+  const [rows, { balance }] = await Promise.all([db.prepare('SELECT * FROM clearances WHERE student_id=? ORDER BY id').all(studentId), balanceFor(studentId)])
   return rows.map((row) => {
     if (row.office !== 'Cashier') return row
     return balance > 0
@@ -103,10 +127,10 @@ export function clearanceSummary(rows) {
 
 // ---- notifications ----------------------------------------------------------
 
-export function notify(userId, message, link = null) {
-  const user = db.prepare('SELECT notify_inapp FROM users WHERE id=?').get(userId)
+export async function notify(userId, message, link = null) {
+  const user = await db.prepare('SELECT notify_inapp FROM users WHERE id=?').get(userId)
   if (!user || !user.notify_inapp) return
-  db.prepare('INSERT INTO notifications (user_id, message, link, created_at) VALUES (?,?,?,?)').run(
+  await db.prepare('INSERT INTO notifications (user_id, message, link, created_at) VALUES (?,?,?,?)').run(
     userId,
     message,
     link,
@@ -115,14 +139,14 @@ export function notify(userId, message, link = null) {
   publish(userId, { type: 'notification' })
 }
 
-export function notifyRoles(role, message, link = null, departmentId = null) {
+export async function notifyRoles(role, message, link = null, departmentId = null) {
   const rows = departmentId
-    ? db.prepare('SELECT id FROM users WHERE role = ? AND active = 1 AND department_id = ?').all(role, departmentId)
-    : db.prepare('SELECT id FROM users WHERE role = ? AND active = 1').all(role)
-  for (const { id } of rows) notify(id, message, link)
+    ? (await db.prepare('SELECT id FROM users WHERE role = ? AND active = 1 AND department_id = ?').all(role, departmentId))
+    : (await db.prepare('SELECT id FROM users WHERE role = ? AND active = 1').all(role))
+  for (const { id } of rows) await notify(id, message, link)
 }
 
-export const notifyRegistrars = (message, link = null) => notifyRoles('registrar', message, link)
+export const notifyRegistrars = async (message, link = null) => await notifyRoles('registrar', message, link)
 
 export const reqNo = (id) => `REQ-${String(id).padStart(4, '0')}`
 
@@ -136,16 +160,17 @@ export const SETTING_DEFAULTS = {
   maxCopies: '10', // most copies of a document per request
 }
 
-export function getSetting(key) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key)
+export async function getSetting(key) {
+  const row = await memo(`setting:${key}`, () => db.prepare('SELECT value FROM settings WHERE key = ?').get(key))
   return row ? row.value : SETTING_DEFAULTS[key]
 }
-export const getNumber = (key) => Number(getSetting(key))
+export const getNumber = async (key) => Number((await getSetting(key)))
 
 // ---- audit log + request history ----------------------------------------------------------------
 
-export function audit(user, action, entity = null, entityId = null, detail = null) {
-  db.prepare(
+export async function audit(user, action, entity = null, entityId = null, detail = null) {
+  if (/^(settings|term)\./.test(action)) clearCache()
+  await db.prepare(
     'INSERT INTO audit_log (user_id, actor, role, action, entity, entity_id, detail, created_at) VALUES (?,?,?,?,?,?,?,?)',
   ).run(
     user?.id ?? null,
@@ -159,8 +184,8 @@ export function audit(user, action, entity = null, entityId = null, detail = nul
   )
 }
 
-export function logRequest(requestId, status, note, userId) {
-  db.prepare('INSERT INTO request_history (request_id, status, note, by_user, created_at) VALUES (?,?,?,?,?)').run(
+export async function logRequest(requestId, status, note, userId) {
+  await db.prepare('INSERT INTO request_history (request_id, status, note, by_user, created_at) VALUES (?,?,?,?,?)').run(
     requestId,
     status,
     note ?? null,
@@ -174,13 +199,13 @@ export function logRequest(requestId, status, note, userId) {
 export const STAFF_ROLES = ['registrar', 'cashier', 'department', 'admin']
 export const tempPassword = () => randomBytes(6).toString('base64url')
 
-export function createUser({ role, loginId, name, email = null, phone = null, password, departmentId = null }) {
-  if (db.prepare('SELECT 1 FROM users WHERE login_id = ?').get(loginId)) throw new HttpError(409, `The ID ${loginId} is already in use.`)
-  return db
+export async function createUser({ role, loginId, name, email = null, phone = null, password, departmentId = null }) {
+  if ((await db.prepare('SELECT 1 FROM users WHERE login_id = ?').get(loginId))) throw new HttpError(409, `The ID ${loginId} is already in use.`)
+  return (await db
     .prepare(
       'INSERT INTO users (role, login_id, password_hash, name, email, phone, department_id) VALUES (?,?,?,?,?,?,?) RETURNING id',
     )
-    .get(role, loginId, hashPassword(password), name, email, phone, departmentId).id
+    .get(role, loginId, hashPassword(password), name, email, phone, departmentId)).id
 }
 
 // ---- enrollment ------------------------------------------------------------------------------------
@@ -188,10 +213,10 @@ export function createUser({ role, loginId, name, email = null, phone = null, pa
 export const ENROLLMENT_STEPS = ['Subject Selection', 'Department Review', 'Registrar Approval', 'Payment', 'Enrolled']
 
 // Where is a student in enrolling for the current term? Derived from the request and the cashier's confirmation.
-export function enrollmentState(studentId) {
-  const term = currentTerm()
+export async function enrollmentState(studentId) {
+  const term = await currentTerm()
   const request = term
-    ? db.prepare('SELECT * FROM enrollment_requests WHERE student_id = ? AND term_id = ?').get(studentId, term.id) ?? null
+    ? (await db.prepare('SELECT * FROM enrollment_requests WHERE student_id = ? AND term_id = ?').get(studentId, term.id)) ?? null
     : null
   let step = 0
   let status = 'Not Started'
@@ -200,13 +225,13 @@ export function enrollmentState(studentId) {
     else if (request.status === 'For Department Review') [step, status] = [1, 'In Progress']
     else if (request.status === 'For Registrar Approval') [step, status] = [2, 'In Progress']
     else if (request.status === 'Approved') [step, status] = request.payment_confirmed_at ? [5, 'Enrolled'] : [3, 'In Progress']
-    else if (db.prepare('SELECT 1 FROM enrollment_items WHERE request_id = ?').get(request.id)) status = 'In Progress'
+    else if ((await db.prepare('SELECT 1 FROM enrollment_items WHERE request_id = ?').get(request.id))) status = 'In Progress'
   }
   return { request, step, status, enrolled: step === ENROLLMENT_STEPS.length }
 }
 
-export function paidPercent(studentId) {
-  const { assessed, paid } = balanceFor(studentId)
+export async function paidPercent(studentId) {
+  const { assessed, paid } = await balanceFor(studentId)
   return assessed > 0 ? Math.round((paid / assessed) * 100) : 100
 }
 
