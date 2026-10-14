@@ -441,7 +441,7 @@ button {
 }
 
 .grid.stats > * {
-  flex: 1 1 190px;
+  flex: 1 1 150px;
   min-width: 0;
 }
 
