@@ -14,6 +14,7 @@
 | 10 | [Ethical and legal notes](10-ethical-and-legal-notes.md) | Draft for the team |
 | 11 | [Deployment](11-deployment.md) | Live URL guide |
 | 12 | [Master spec gap analysis](12-master-spec-gap-analysis.md) | Enterprise specification vs. current code, roadmap |
+| 13 | [System diagrams and database design (Word)](SSIS-System-Diagrams-and-Database-Design.docx) | Use case, activity, data flow and class diagrams, ERD and 3NF — 58 pages, 29 figures |
 
 ## Final paper checklist
 

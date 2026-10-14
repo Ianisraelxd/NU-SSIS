@@ -305,6 +305,7 @@ The project follows Scrum. Everything is in [`docs/`](docs/README.md):
 | [Ethical and legal notes](docs/10-ethical-and-legal-notes.md) | Draft for the team |
 | [Deployment](docs/11-deployment.md) | Live URL guide |
 | [Master spec gap analysis](docs/12-master-spec-gap-analysis.md) | Enterprise specification vs. code, roadmap |
+| [System diagrams and database design](docs/SSIS-System-Diagrams-and-Database-Design.docx) | Word document: use case, activity, data flow and class diagrams, ERD and 3NF |
 
 ### Scrum team
 
