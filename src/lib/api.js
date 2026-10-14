@@ -1,3 +1,5 @@
+import { loadingEnd, loadingStart } from './loading.js'
+
 const TOKEN_KEY = 'nu-ssis-token'
 
 export const getToken = () => {
@@ -30,6 +32,15 @@ export class ApiError extends Error {
 }
 
 async function request(method, path, body) {
+  loadingStart()
+  try {
+    return await send(method, path, body)
+  } finally {
+    loadingEnd()
+  }
+}
+
+async function send(method, path, body) {
   const token = getToken()
   let res
   try {

@@ -435,7 +435,14 @@ button {
 }
 
 .grid.stats {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  /* flex-wrap, not a fixed grid: the last row stretches to fill instead of leaving an empty slot */
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.grid.stats > * {
+  flex: 1 1 190px;
+  min-width: 0;
 }
 
 .grid.two {
@@ -1351,6 +1358,8 @@ table.table {
 
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap; /* long filter lists wrap on phones instead of overflowing the screen */
+  max-width: 100%;
   padding: 4px;
   gap: 4px;
   background: var(--surface-2);
@@ -1956,3 +1965,13 @@ a.stat:active { transform: translateY(-1px) scale(0.99); }
     scroll-behavior: auto !important;
   }
 }
+
+/* ---- buffering / loading indicators ---- */
+.loadbar { position: fixed; inset: 0 0 auto 0; height: 3px; z-index: 9999; pointer-events: none; }
+.loadbar-fill { display: block; height: 100%; width: 40%; background: linear-gradient(90deg, #f5b800, #1b2a8a); border-radius: 0 3px 3px 0; animation: loadbar-run 1.1s ease-in-out infinite; }
+.loadbar-fill.done { width: 100%; animation: none; transition: width 0.2s; }
+.loadbar-note { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); background: Canvas; color: CanvasText; border: 1px solid GrayText; border-radius: 999px; padding: 6px 14px; font-size: 0.85rem; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+@keyframes loadbar-run { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+.btn-spin { display: inline-block; flex: none; width: 1em; height: 1em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -0.15em; margin-right: 0.5em; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loadbar-fill { animation: none; width: 100%; opacity: .6; } .btn-spin { animation-duration: 2s; } }

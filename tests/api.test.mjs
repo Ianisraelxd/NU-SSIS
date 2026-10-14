@@ -72,7 +72,10 @@ describe('authentication & access control', () => {
   test('wrong password is rejected without saying which part was wrong', async () => {
     const r = await post('/auth/login', null, { role: 'student', loginId: '26001001', password: 'nope' })
     assert.equal(r.status, 401)
-    assert.equal(r.data.error, 'Incorrect ID or password.')
+    assert.match(r.data.error, /^Incorrect ID or password\./)
+    const ghost = await post('/auth/login', null, { role: 'student', loginId: '99999999', password: 'nope' })
+    const shape = (e) => e.replace(/\d+ attempts? left/, 'N attempts left')
+    assert.equal(shape(ghost.data.error), shape(r.data.error), 'unknown IDs must look the same as real ones')
   })
 
   test('protected routes need a token', async () => {
@@ -103,6 +106,33 @@ describe('authentication & access control', () => {
     }
     const locked = await post('/auth/login', null, { role: 'student', loginId: '26001010', password: PASSWORDS.student })
     assert.ok([423, 429].includes(locked.status), `expected a lock, got ${locked.status}`)
+  })
+
+  test('login attempts: a failed sign-in says how many tries are left and every attempt is logged for the admin', async () => {
+    const bad = await post('/auth/login', null, { role: 'student', loginId: '26001009', password: 'nope' })
+    assert.equal(bad.status, 401)
+    assert.match(bad.data.error, /4 attempts left/)
+    await login('student', '26001009') // success also resets the counter and is logged
+    const log = await get('/admin/login-attempts?q=26001009', tokens.admin)
+    assert.equal(log.status, 200)
+    assert.ok(log.data.rows.some((r) => !r.success && r.reason === 'wrong password'))
+    assert.ok(log.data.rows.some((r) => r.success))
+    assert.ok(!JSON.stringify(log.data).includes('nope'), 'passwords must never be stored')
+    const denied = await get('/admin/login-attempts', tokens.registrar)
+    assert.equal(denied.status, 403)
+  })
+
+  test('odd input types and limits are rejected instead of being accepted or ignored', async () => {
+    // a negative limit used to switch pagination off and return the whole table
+    const all = await get('/admin/audit?limit=-1', tokens.admin)
+    assert.equal(all.status, 200)
+    assert.ok(all.data.rows.length <= 200 && all.data.rows.length >= 1)
+    const attempts = await get('/admin/login-attempts?limit=-1', tokens.admin)
+    assert.ok(attempts.data.rows.length >= 1)
+    // an object used to be saved as "[object Object]"
+    assert.equal((await put('/admin/settings', tokens.admin, { values: { schoolName: { a: 1 } } })).status, 400)
+    // an array used to be accepted as a password
+    assert.equal((await post('/settings/password', tokens.juan, { current: PASSWORDS.student, next: ['abcdefgh', 'x'] })).status, 400)
   })
 
   test('SQL injection in login and search inputs does nothing', async () => {
@@ -196,6 +226,7 @@ describe('document requests: Pending → For Payment → Processing → Ready fo
   test('validation: past dates, bad copy counts and duplicates are rejected', async () => {
     const types = (await get('/student/documents', tokens.juan)).data.types
     const coe = types.find((t) => t.name === 'Certificate of Enrollment')
+    assert.equal((await post('/student/documents/requests', tokens.juan, {})).status, 400) // used to crash with a 500
     assert.equal((await post('/student/documents/requests', tokens.juan, { docTypeId: coe.id, copies: 1, pickupDate: '2000-01-01' })).status, 400)
     assert.equal((await post('/student/documents/requests', tokens.juan, { docTypeId: coe.id, copies: 99, pickupDate: '2099-01-01' })).status, 400)
     assert.equal((await post('/student/documents/requests', tokens.juan, { docTypeId: coe.id, copies: 1, pickupDate: '2099-01-01' })).status, 409) // one is already open

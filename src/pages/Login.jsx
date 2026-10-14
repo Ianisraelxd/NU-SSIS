@@ -89,7 +89,14 @@ export default function Login({ role }) {
             </p>
           )}
           <button className="btn block" disabled={busy}>
-            {busy ? 'Signing in…' : 'Login'}
+            {busy ? (
+              <>
+                <span className="btn-spin" aria-hidden="true" />
+                Signing in…
+              </>
+            ) : (
+              'Login'
+            )}
           </button>
         </form>
 

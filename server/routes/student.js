@@ -501,7 +501,7 @@ router.get('/documents', (req, res) => {
 
 router.post('/documents/requests', (req, res) => {
   const { docTypeId, purpose, copies, pickupDate, remarks } = req.body ?? {}
-  const type = db.prepare('SELECT * FROM doc_types WHERE id=? AND active=1').get(docTypeId)
+  const type = db.prepare('SELECT * FROM doc_types WHERE id=? AND active=1').get(Number.isInteger(Number(docTypeId)) ? Number(docTypeId) : 0)
   if (!type) throw new HttpError(400, 'Choose a document type.')
   const count = Number(copies)
   const maxCopies = getNumber('maxCopies')

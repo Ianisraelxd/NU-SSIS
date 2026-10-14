@@ -1,5 +1,6 @@
 import { lazy } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import LoadingBar from './components/LoadingBar.jsx'
 import Layout from './components/Layout.jsx'
 import StaffQueue from './components/StaffQueue.jsx'
 import { ConfirmProvider, Loading, ToastProvider } from './components/ui.jsx'
@@ -44,6 +45,7 @@ const DepartmentHome = lazy(() => import('./pages/department/Home.jsx'))
 const DepartmentStudents = lazy(() => import('./pages/department/Students.jsx'))
 // admin
 const AdminAnnouncements = lazy(() => import('./pages/admin/Announcements.jsx'))
+const AdminLoginAttempts = lazy(() => import('./pages/admin/LoginAttempts.jsx'))
 const AdminAudit = lazy(() => import('./pages/admin/Audit.jsx'))
 const AdminDepartments = lazy(() => import('./pages/admin/Departments.jsx'))
 const AdminHome = lazy(() => import('./pages/admin/Home.jsx'))
@@ -104,6 +106,7 @@ const ADMIN_NAV = [
   { to: 'announcements', label: 'Announcements' },
   { to: 'reports', label: 'Reports' },
   { to: 'audit', label: 'Audit Log' },
+  { to: 'login-attempts', label: 'Login Attempts' },
   { to: 'permissions', label: 'Roles & Permissions' },
   { to: 'system', label: 'System Settings' },
 ]
@@ -212,6 +215,7 @@ function AppRoutes() {
           <Route path="announcements" element={<AdminAnnouncements />} />
           <Route path="reports" element={<AdminReports />} />
           <Route path="audit" element={<AdminAudit />} />
+          <Route path="login-attempts" element={<AdminLoginAttempts />} />
           <Route path="permissions" element={<AdminPermissions />} />
           <Route path="system" element={<AdminSystemSettings />} />
           <Route path="settings" element={<Settings />} />
@@ -243,6 +247,7 @@ export default function App() {
         <RealtimeProvider>
           <ToastProvider>
             <ConfirmProvider>
+              <LoadingBar />
               <AppRoutes />
             </ConfirmProvider>
           </ToastProvider>
