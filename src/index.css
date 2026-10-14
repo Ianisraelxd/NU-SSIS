@@ -1351,6 +1351,8 @@ table.table {
 
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap; /* long filter lists wrap on phones instead of overflowing the screen */
+  max-width: 100%;
   padding: 4px;
   gap: 4px;
   background: var(--surface-2);

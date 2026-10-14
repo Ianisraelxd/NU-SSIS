@@ -122,6 +122,19 @@ describe('authentication & access control', () => {
     assert.equal(denied.status, 403)
   })
 
+  test('odd input types and limits are rejected instead of being accepted or ignored', async () => {
+    // a negative limit used to switch pagination off and return the whole table
+    const all = await get('/admin/audit?limit=-1', tokens.admin)
+    assert.equal(all.status, 200)
+    assert.ok(all.data.rows.length <= 200 && all.data.rows.length >= 1)
+    const attempts = await get('/admin/login-attempts?limit=-1', tokens.admin)
+    assert.ok(attempts.data.rows.length >= 1)
+    // an object used to be saved as "[object Object]"
+    assert.equal((await put('/admin/settings', tokens.admin, { values: { schoolName: { a: 1 } } })).status, 400)
+    // an array used to be accepted as a password
+    assert.equal((await post('/settings/password', tokens.juan, { current: PASSWORDS.student, next: ['abcdefgh', 'x'] })).status, 400)
+  })
+
   test('SQL injection in login and search inputs does nothing', async () => {
     const r = await post('/auth/login', null, { role: 'student', loginId: "' OR '1'='1' --", password: "' OR '1'='1" })
     assert.equal(r.status, 401)
@@ -213,6 +226,7 @@ describe('document requests: Pending → For Payment → Processing → Ready fo
   test('validation: past dates, bad copy counts and duplicates are rejected', async () => {
     const types = (await get('/student/documents', tokens.juan)).data.types
     const coe = types.find((t) => t.name === 'Certificate of Enrollment')
+    assert.equal((await post('/student/documents/requests', tokens.juan, {})).status, 400) // used to crash with a 500
     assert.equal((await post('/student/documents/requests', tokens.juan, { docTypeId: coe.id, copies: 1, pickupDate: '2000-01-01' })).status, 400)
     assert.equal((await post('/student/documents/requests', tokens.juan, { docTypeId: coe.id, copies: 99, pickupDate: '2099-01-01' })).status, 400)
     assert.equal((await post('/student/documents/requests', tokens.juan, { docTypeId: coe.id, copies: 1, pickupDate: '2099-01-01' })).status, 409) // one is already open

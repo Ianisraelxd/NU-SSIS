@@ -66,4 +66,9 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 
 | ID | Found by | Description | Severity | Status |
 | --- | --- | --- | --- | --- |
-| | | | | |
+| BUG-01 | API fuzz (3,925 calls, every route × every role) | `POST /student/documents/requests` with no document type returned 500 instead of 400 (`node:sqlite` rejects `undefined`) | Medium | Fixed, test added |
+| BUG-02 | Edge-case probe | `limit=-1` on `/admin/audit` and `/admin/login-attempts` bypassed pagination and returned every row | Low | Fixed, test added |
+| BUG-03 | Edge-case probe | A setting could be saved as an object (stored as "[object Object]") | Low | Fixed, test added |
+| BUG-04 | Edge-case probe | An array was accepted as a new password | Low | Fixed, test added |
+| BUG-05 | Phone-width sweep of all 44 pages | Pending Tasks category filter overflowed the screen by 160 px at 375 px wide | Low | Fixed |
+| SEC-01 | Review of the new sign-in message | "N attempts left" appeared only for real accounts, revealing which IDs exist | Medium | Fixed (unknown IDs get the same countdown), test added |

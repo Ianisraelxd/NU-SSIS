@@ -240,6 +240,7 @@ router.put('/settings', (req, res) => {
   for (const [key, raw] of Object.entries(values)) {
     const rule = SETTING_RULES[key]
     if (!rule) throw new HttpError(400, `Unknown setting “${key}”.`)
+    if (typeof raw !== 'string' && typeof raw !== 'number') throw new HttpError(400, `${rule.label}: enter a single value.`)
     const value = String(raw).trim()
     if (!rule.check(value)) throw new HttpError(400, `${rule.label}: ${rule.hint}.`)
     if (value !== getSetting(key)) {
@@ -296,7 +297,7 @@ router.get('/login-attempts', (req, res) => {
   if (result === 'success') where.push('success = 1')
   if (result === 'failed') where.push('success = 0')
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-  const limit = Math.min(Number(req.query.limit) || 50, 200)
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
   const offset = Math.max(Number(req.query.offset) || 0, 0)
   res.json({
     total: db.prepare(`SELECT COUNT(*) AS c FROM login_attempts ${clause}`).get(...params).c,
@@ -321,7 +322,7 @@ router.get('/audit', (req, res) => {
     params.push(role)
   }
   const clause = where.length ? `WHERE ${where.join(' AND ')}` : ''
-  const limit = Math.min(Number(req.query.limit) || 50, 200)
+  const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
   const offset = Math.max(Number(req.query.offset) || 0, 0)
   res.json({
     total: db.prepare(`SELECT COUNT(*) AS c FROM audit_log ${clause}`).get(...params).c,

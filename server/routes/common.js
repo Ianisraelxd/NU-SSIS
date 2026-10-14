@@ -84,6 +84,7 @@ router.put('/settings/preferences', (req, res) => {
 router.post('/settings/password', (req, res) => {
   const { current, next } = req.body ?? {}
   if (!current || !next) throw new HttpError(400, 'Fill in all password fields.')
+  if (typeof current !== 'string' || typeof next !== 'string') throw new HttpError(400, 'Passwords must be text.')
   if (!verifyPassword(String(current), req.user.password_hash)) throw new HttpError(400, 'Current password is incorrect.')
   if (String(next).length < 8) throw new HttpError(400, 'New password must be at least 8 characters.')
   if (next === current) throw new HttpError(400, 'New password must be different from the current one.')
