@@ -20,6 +20,7 @@ export default function AdminHome() {
             <>
               <div className="grid stats">
                 <Stat label="Active accounts" to="/admin/users" value={accounts} hint={Object.entries(d.roles).map(([r, n]) => `${n} ${ROLE_LABEL[r].toLowerCase()}`).join(' · ')} />
+                <Stat label="Waiting for your approval" to="/admin/approvals" value={d.pendingApprovals} tone={d.pendingApprovals ? 'warn' : undefined} hint="Fee changes and receipt voids" />
                 <Stat label="Disabled / locked" to="/admin/users" value={`${d.disabled} / ${d.locked}`} tone={d.locked ? 'warn' : undefined} />
                 <Stat label="Failed sign-ins (24 h)" to="/admin/audit" value={d.failedLogins24h} tone={d.failedLogins24h > 10 ? 'bad' : undefined} />
                 <Stat label="Open document requests" to="/admin/reports" value={d.openRequests} />
@@ -31,9 +32,9 @@ export default function AdminHome() {
                   rowKey="createdAt"
                   empty="No activity yet."
                   columns={[
-                    { key: 'createdAt', label: 'When', render: (r) => fmtDateTime(r.createdAt) },
-                    { key: 'actor', label: 'Who', render: (r) => r.actor ?? 'Anonymous' },
-                    { key: 'action', label: 'Action', render: (r) => <span className="mono">{r.action}</span> },
+                    { key: 'createdAt', label: 'Date and time', render: (r) => fmtDateTime(r.createdAt) },
+                    { key: 'actor', label: 'Performed by', render: (r) => r.actor ?? 'Anonymous' },
+                    { key: 'action', label: 'Action performed', render: (r) => <span className="mono">{r.action}</span> },
                     { key: 'detail', label: 'Details', render: (r) => r.detail ?? '—' },
                   ]}
                   rows={d.recent}

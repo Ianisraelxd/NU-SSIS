@@ -13,7 +13,7 @@ The complete list of what the system needs, built from the **System Requirements
 | SP-01 | Student login / logout | **High** | Built | Student number + password; 5 wrong tries lock the account for 15 min |
 | SP-02 | View and update basic student profile | Medium | Built | Name/email/phone; address and guardian contact. Academic details are read-only |
 | SP-03 | View enrollment status and progress | **High** | Built | 5-step tracker: Subject Selection → Department Review → Registrar Approval → Payment → Enrolled |
-| SP-04 | Submit / select subjects for enrollment | **High** | Built | Unit cap from system settings; draft, submit, return-and-resubmit |
+| SP-04 | Submit / select subjects for enrollment | **High** | Built | Unit cap from system settings; draft, submit, return-and-resubmit. Subjects whose class times overlap are blocked (409 on the server too) |
 | SP-05 | View clearance requirements and status | **High** | Built | Six offices; the Cashier line follows the real balance |
 | SP-06 | View grades per semester / subject | **High** | Built | Prelim, Midterm, Finals, final point grade, grade range and policy |
 | SP-07 | Request school documents online | **High** | Built | See Document Request System (DR-01…DR-08) |
@@ -27,7 +27,7 @@ The complete list of what the system needs, built from the **System Requirements
 | ID | Item | Priority | Status | Notes |
 | --- | --- | --- | --- | --- |
 | RG-01 | Manage student records | **High** | Built | Add / edit students (one-time password for new accounts) |
-| RG-02 | Verify and approve enrollment | **High** | Built | Approval needs verified records; approving creates the student's subject list |
+| RG-02 | Verify and approve enrollment | **High** | Built | Approval needs verified records; approving creates the student's subject list. Reviewer sees the student's schedule; a clash cannot be approved |
 | RG-03 | Manage subjects and class schedules | **High** | Built | Offer / hide subjects; room and instructor conflict detection |
 | RG-04 | Manage student grades / grade records | **High** | Built | Grade entry per subject with 0–100 validation; students are notified |
 | RG-05 | Process document requests | **High** | Built | Approve, mark ready, release; approve-next-pending shortcut |
@@ -43,8 +43,8 @@ The complete list of what the system needs, built from the **System Requirements
 | --- | --- | --- | --- | --- |
 | CS-01 | View student payment information | **High** | Built | Assessed, paid, balance and % paid per student |
 | CS-02 | Record and verify payments | **High** | Built | Amount cannot exceed the balance; method and OR number captured |
-| CS-03 | Manage student balances / fees | **High** | Built | Add, edit, remove fee lines; the "Due" line always equals the balance |
-| CS-04 | Update payment status | Medium | Built | Void a receipt with a reason; balance goes back up |
+| CS-03 | Manage student balances / fees | **High** | Built | Cashier requests add / change / remove; the Administrator approves (separation of duties). The "Due" line always equals the balance |
+| CS-04 | Update payment status | Medium | Built | Cashier requests a void with a reason; the Administrator approves and the balance goes back up. OR numbers are system-generated |
 | CS-05 | Issue / record official receipt information | **High** | Built | Auto-numbered OR, no duplicates, printable receipt |
 | CS-06 | Confirm payment for enrollment or document requests | **High** | Built | Enrollment needs the minimum % paid; documents need the exact fee |
 | CS-07 | Generate payment / collection reports | Medium | Built | By period; tuition vs document fees; by payment method; CSV and print |
@@ -54,7 +54,7 @@ The complete list of what the system needs, built from the **System Requirements
 | ID | Item | Priority | Status | Notes |
 | --- | --- | --- | --- | --- |
 | DP-01 | View students under the department | **High** | Built | Scoped to the staff member's own department |
-| DP-02 | Review enrollment / subject requests | **High** | Built | Approve (sends to Registrar) or return with a reason |
+| DP-02 | Review enrollment / subject requests | **High** | Built | Shows the student's schedule; approve (sends to Registrar) or return with a reason; a clash cannot be approved |
 | DP-03 | Approve or reject department-related clearance | **High** | Built | Approve / Pending / Hold; cannot clear while requirements are unverified |
 | DP-04 | Manage / verify academic requirements | Medium | Built | Add, verify, mark missing, remove requirements per student |
 | DP-05 | View student grades when authorized | Medium | Built | Own-department students only; every view is written to the audit log |
@@ -108,7 +108,7 @@ The complete list of what the system needs, built from the **System Requirements
 | SQ-03 | Rate limiting | **High** | Built | 600 requests / minute / IP on the API (configurable) |
 | SQ-04 | SQL-injection protection | **High** | Built | Every query is parameterised |
 | SQ-05 | Role-based access control | **High** | Built | Each module accepts only its role; department data scoped by department |
-| SQ-06 | Automated tests (unit, integration, security) and a load-test script | **High** | Built | 64 tests: npm test. Load test: scripts/perf.mjs |
+| SQ-06 | Automated tests (unit, integration, security) and a load-test script | **High** | Built | 70 tests: npm test. Load test: scripts/perf.mjs |
 | SQ-07 | Light / dark mode, responsive layout, accessible UI | Low | Built | Keyboard navigation, focus rings, reduced-motion support |
 
 ## Planned

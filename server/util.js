@@ -249,6 +249,47 @@ export const QUEUE_SERVICES = {
   Department: ['Enrollment Review', 'Clearance', 'Academic Advising'],
 }
 
+// ---- class schedule conflicts -----------------------------------------------------------------------
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+export const clock = (min) => {
+  const h = Math.floor(min / 60)
+  return `${((h + 11) % 12) + 1}:${String(min % 60).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+// Every weekly class meeting of the given subjects, in day and time order.
+export async function scheduleFor(subjectIds) {
+  if (!subjectIds.length) return []
+  return await db
+    .prepare(
+      `SELECT m.subject_id AS subjectId, s.code, s.description, COALESCE(u.name, m.instructor) AS instructor, m.day,
+              m.start_min AS startMin, m.end_min AS endMin, m.room
+       FROM meetings m JOIN subjects s ON s.id = m.subject_id LEFT JOIN users u ON u.id = m.teacher_id
+       WHERE m.subject_id IN (${subjectIds.map(() => '?').join(',')}) ORDER BY m.day, m.start_min, s.code`,
+    )
+    .all(...subjectIds)
+}
+
+// Two meetings of different subjects on the same day whose times overlap. A student cannot attend both,
+// so such a schedule is never offered or approved.
+export function findConflicts(meetings) {
+  const found = []
+  for (let i = 0; i < meetings.length; i++) {
+    for (let j = i + 1; j < meetings.length; j++) {
+      const a = meetings[i]
+      const b = meetings[j]
+      if (a.subjectId !== b.subjectId && a.day === b.day && a.startMin < b.endMin && b.startMin < a.endMin) {
+        found.push({
+          a: a.code,
+          b: b.code,
+          day: DAY_NAMES[a.day - 1],
+          text: `${a.code} (${clock(a.startMin)}–${clock(a.endMin)}) and ${b.code} (${clock(b.startMin)}–${clock(b.endMin)}) are both on ${DAY_NAMES[a.day - 1]}`,
+        })
+      }
+    }
+  }
+  return found
+}
+
 // ---- chat helpers -----------------------------------------------------------
 
 // Number of unread messages in task `t` for a user. Bind parameters: (userId, userId).

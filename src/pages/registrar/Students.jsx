@@ -181,7 +181,7 @@ export default function Students() {
                   { key: 'studentNo', label: 'Student no.', render: (s) => <span className="mono">{s.studentNo}</span> },
                   {
                     key: 'name',
-                    label: 'Name',
+                    label: 'Student name',
                     render: (s) => (
                       <>
                         <b>{s.name}</b>
@@ -191,12 +191,12 @@ export default function Students() {
                     ),
                   },
                   { key: 'section', label: 'Year / section', render: (s) => `${s.yearLevel} · ${s.section}` },
-                  { key: 'deptCode', label: 'Dept.', render: (s) => s.deptCode ?? '—' },
-                  { key: 'enrollment', label: 'Enrollment', render: (s) => <Badge status={s.enrollment} /> },
-                  { key: 'verified', label: 'Records', render: (s) => (s.verified ? <Badge status="Verified" /> : <Badge status="Pending">Not verified</Badge>) },
+                  { key: 'deptCode', label: 'Department', render: (s) => s.deptCode ?? '—' },
+                  { key: 'enrollment', label: 'Enrollment status', render: (s) => <Badge status={s.enrollment} /> },
+                  { key: 'verified', label: 'Record verification', render: (s) => (s.verified ? <Badge status="Verified" /> : <Badge status="Pending">Not verified</Badge>) },
                   {
                     key: 'actions',
-                    label: '',
+                    label: 'Actions',
                     render: (s) => (
                       <div className="actions">
                         {!s.verified && (

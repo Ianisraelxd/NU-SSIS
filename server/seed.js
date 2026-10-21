@@ -78,11 +78,13 @@ const CURRENT_SUBJECTS = [
   ['ITP106', 'Information Assurance and Security 1', 3, [['Marvin H. Bicua', 1, hm(8), hm(10), '311'], ['Marvin H. Bicua', 4, hm(11), hm(13), '311']], [82.25, 84.8]],
 ]
 
-// more subjects open for enrollment this term (no schedule yet — the Registrar adds it)
+// more subjects open for enrollment this term. Some have no class times yet (the Registrar adds them); two are scheduled so that
+// they clash with a subject above — ITEW4 with ITEW3 (Thursday morning) and ITP110 with CCS111 (Tuesday afternoon) — which the
+// enrollment page now refuses to combine. ITP109 has a time that clashes with nothing.
 const EXTRA_OFFERED = [
-  ['ITP109', 'Capstone Project 1', 3, 'CCIT', 3],
-  ['ITEW4', 'Web Development 2', 3, 'CCIT', 3],
-  ['ITP110', 'Systems Administration and Maintenance', 3, 'CCIT', 3],
+  ['ITP109', 'Capstone Project 1', 3, 'CCIT', 3, [['Mildred D. Rodriguez', 6, hm(8), hm(11), 'COMLAB 1']]],
+  ['ITEW4', 'Web Development 2', 3, 'CCIT', 3, [['Albert Q. Alforja', 4, hm(9), hm(11), 'COMLAB 1']]],
+  ['ITP110', 'Systems Administration and Maintenance', 3, 'CCIT', 3, [['Roselle R. Bengco', 2, hm(14), hm(16), 'Networking Room']]],
   ['GEC09', 'The Life and Works of Rizal', 3, null, 1],
   ['PATHFIT3', 'Physical Activity Towards Health and Fitness 3', 2, null, 1],
   ['ACC201', 'Intermediate Accounting 1', 3, 'CBAA', 2],
@@ -213,7 +215,11 @@ async function seed() {
     return id
   }))
   const extraIds = Object.fromEntries(
-    (await mapSeq(EXTRA_OFFERED, async ([code, desc, units, dept, year]) => [code, (await insSubject.get(code, desc, units, year, 1, dept ? deptId[dept] : null)).id])),
+    (await mapSeq(EXTRA_OFFERED, async ([code, desc, units, dept, year, meetings = []]) => {
+      const id = (await insSubject.get(code, desc, units, year, 1, dept ? deptId[dept] : null)).id
+      for (const [instructor, day, start, end, room] of meetings) await insMeeting.run(id, instructor, teacherIds[instructor], day, start, end, room)
+      return [code, id]
+    })),
   )
   const pastSubjectIds = (await mapSeq(PAST_TERMS, async (t) => (await mapSeq(t.subjects, async ([code, desc, units]) => (await insSubject.get(code, desc, units, 2, 0, deptId.CCIT)).id))))
 

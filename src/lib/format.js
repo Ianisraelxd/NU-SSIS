@@ -79,6 +79,7 @@ export const statusTone = (status) =>
     Failed: 'bad',
     Missing: 'bad',
     Returned: 'bad',
+    Rejected: 'bad',
     Locked: 'bad',
     Cancelled: 'muted',
     Skipped: 'muted',

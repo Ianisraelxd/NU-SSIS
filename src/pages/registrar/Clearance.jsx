@@ -103,9 +103,9 @@ function StudentModal({ id, onClose, onChanged }) {
                 <thead>
                   <tr>
                     <th>Office</th>
-                    <th>Status</th>
+                    <th>Clearance status</th>
                     <th>Remarks</th>
-                    <th />
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -155,14 +155,14 @@ export default function Clearance() {
                 empty="No students match these filters."
                 columns={[
                   { key: 'studentNo', label: 'Student no.', render: (s) => <span className="mono">{s.studentNo}</span> },
-                  { key: 'name', label: 'Name', render: (s) => <b>{s.name}</b> },
+                  { key: 'name', label: 'Student name', render: (s) => <b>{s.name}</b> },
                   { key: 'section', label: 'Year / section', render: (s) => `${s.yearLevel} · ${s.section}` },
-                  { key: 'cleared', label: 'Cleared', align: 'center', render: (s) => `${s.cleared} / ${s.total}` },
-                  { key: 'overall', label: 'Status', render: (s) => <Badge status={s.overall} /> },
-                  { key: 'balance', label: 'Balance', align: 'num', render: (s) => peso(s.balance) },
+                  { key: 'cleared', label: 'Offices cleared', align: 'center', render: (s) => `${s.cleared} / ${s.total}` },
+                  { key: 'overall', label: 'Clearance status', render: (s) => <Badge status={s.overall} /> },
+                  { key: 'balance', label: 'Remaining balance', align: 'num', render: (s) => peso(s.balance) },
                   {
                     key: 'manage',
-                    label: '',
+                    label: 'Actions',
                     render: (s) => (
                       <button className="btn small secondary" onClick={() => setOpenId(s.id)}>
                         Manage

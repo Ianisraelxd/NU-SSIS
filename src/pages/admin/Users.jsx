@@ -34,7 +34,7 @@ function UserForm({ user, meta, onClose, onSaved }) {
     <Modal title={editing ? `Edit ${user.loginId}` : 'Create a staff account'} onClose={onClose}>
       <form onSubmit={save} noValidate>
         {!editing && (
-          <Field label="ID" htmlFor="u-id" help="Used to sign in, e.g. CSH-0002">
+          <Field label="Login ID" htmlFor="u-id" help="Used to sign in, e.g. CSH-0002">
             <input id="u-id" className="input" value={form.loginId} onChange={set('loginId')} />
           </Field>
         )}
@@ -50,7 +50,7 @@ function UserForm({ user, meta, onClose, onSaved }) {
           </Field>
         </div>
         <div className="row">
-          <Field label="Role" htmlFor="u-role" help={canChangeRole ? undefined : 'Student roles cannot be changed'}>
+          <Field label="Account role" htmlFor="u-role" help={canChangeRole ? undefined : 'Student roles cannot be changed'}>
             <select id="u-role" className="select" value={form.role} onChange={set('role')} disabled={!canChangeRole}>
               {(canChangeRole ? STAFF : [form.role]).map((r) => (
                 <option key={r} value={r}>
@@ -166,10 +166,10 @@ export default function Users() {
               <Table
                 empty="No accounts match."
                 columns={[
-                  { key: 'loginId', label: 'ID', render: (u) => <span className="mono">{u.loginId}</span> },
+                  { key: 'loginId', label: 'Login ID', render: (u) => <span className="mono">{u.loginId}</span> },
                   {
                     key: 'name',
-                    label: 'Name',
+                    label: 'Full name',
                     render: (u) => (
                       <>
                         <b>{u.name}</b>
@@ -178,12 +178,12 @@ export default function Users() {
                       </>
                     ),
                   },
-                  { key: 'role', label: 'Role', render: (u) => `${ROLE_LABEL[u.role]}${u.deptCode ? ` · ${u.deptCode}` : ''}` },
-                  { key: 'createdAt', label: 'Created', render: (u) => fmtDate(u.createdAt) },
-                  { key: 'status', label: 'Status', render: (u) => (!u.active ? <Badge status="Disabled" /> : u.locked ? <Badge status="Locked" /> : <Badge status="Active" />) },
+                  { key: 'role', label: 'Account role', render: (u) => `${ROLE_LABEL[u.role]}${u.deptCode ? ` · ${u.deptCode}` : ''}` },
+                  { key: 'createdAt', label: 'Date created', render: (u) => fmtDate(u.createdAt) },
+                  { key: 'status', label: 'Account status', render: (u) => (!u.active ? <Badge status="Disabled" /> : u.locked ? <Badge status="Locked" /> : <Badge status="Active" />) },
                   {
                     key: 'x',
-                    label: '',
+                    label: 'Actions',
                     render: (u) => (
                       <div className="actions">
                         <button className="btn small secondary" onClick={() => setForm(u)}>

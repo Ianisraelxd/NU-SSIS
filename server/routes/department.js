@@ -15,6 +15,8 @@ import {
   notifyRoles,
   nowIso,
   termLabel,
+  findConflicts,
+  scheduleFor,
 } from '../util.js'
 import { requireAuth } from './auth.js'
 
@@ -111,13 +113,14 @@ router.get('/enrollment', async (req, res) => {
        ORDER BY e.submitted_at, e.id`,
     )
     .all(...[(await currentTerm()).id, dept, ...(status === 'all' ? [] : [status])])
-  const items = db.prepare('SELECT s.code, s.description, s.units FROM enrollment_items i JOIN subjects s ON s.id = i.subject_id WHERE i.request_id = ? ORDER BY s.code')
+  const items = db.prepare('SELECT s.id, s.code, s.description, s.units FROM enrollment_items i JOIN subjects s ON s.id = i.subject_id WHERE i.request_id = ? ORDER BY s.code')
   res.json({
     term: termLabel((await currentTerm())),
     maxUnits: (await getNumber('maxUnits')),
     requests: (await Promise.all(rows.map(async (r) => {
       const subjects = await items.all(r.id)
-      return { ...r, subjects, units: subjects.reduce((n, s) => n + s.units, 0) }
+      const schedule = await scheduleFor(subjects.map((s) => s.id))
+      return { ...r, subjects, units: subjects.reduce((n, s) => n + s.units, 0), schedule, conflicts: findConflicts(schedule).map((c) => c.text) }
     }))),
   })
 })
@@ -136,6 +139,8 @@ router.patch('/enrollment/:id', async (req, res) => {
   const now = nowIso()
 
   if (decision === 'approve') {
+    const clashes = findConflicts(await scheduleFor((await db.prepare('SELECT subject_id FROM enrollment_items WHERE request_id = ?').all(request.id)).map((r) => r.subject_id)))
+    if (clashes.length) throw new HttpError(409, `This schedule has a conflict, so it cannot be approved: ${clashes.map((c) => c.text).join('; ')}. Return it to the student to fix.`)
     await db.prepare("UPDATE enrollment_requests SET status = 'For Registrar Approval', remarks = NULL, dept_reviewed_by = ?, dept_reviewed_at = ? WHERE id = ?").run(req.user.id, now, request.id)
     await notify(request.student_id, 'Your department approved your subjects. Next: Registrar approval.', '/enrollment')
     await notifyRoles('registrar', `Enrollment of ${studentNo} passed department review.`, '/registrar/enrollment')

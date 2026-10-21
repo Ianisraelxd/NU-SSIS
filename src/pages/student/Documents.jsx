@@ -201,13 +201,13 @@ export default function Documents() {
                   <Table
                     empty="You haven’t requested any documents yet."
                     columns={[
-                      { key: 'requestNo', label: 'Request no.', render: (r) => <span className="mono">{r.requestNo}</span> },
+                      { key: 'requestNo', label: 'Request number', render: (r) => <span className="mono">{r.requestNo}</span> },
                       { key: 'document', label: 'Document', render: (r) => (r.copies > 1 ? `${r.document} ×${r.copies}` : r.document) },
-                      { key: 'createdAt', label: 'Filed', render: (r) => fmtShort(r.createdAt) },
-                      { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
+                      { key: 'createdAt', label: 'Date filed', render: (r) => fmtShort(r.createdAt) },
+                      { key: 'status', label: 'Request status', render: (r) => <Badge status={r.status} /> },
                       {
                         key: 'actions',
-                        label: '',
+                        label: 'Actions',
                         render: (r) => (
                           <div className="actions">
                             <button className="btn small secondary" onClick={() => setDetails(r)}>

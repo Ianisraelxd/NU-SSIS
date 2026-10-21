@@ -137,7 +137,7 @@ export default function Requests() {
               <Table
                 empty="No requests match these filters."
                 columns={[
-                  { key: 'requestNo', label: 'Request', render: (r) => <span className="mono">{r.requestNo}</span> },
+                  { key: 'requestNo', label: 'Request number', render: (r) => <span className="mono">{r.requestNo}</span> },
                   {
                     key: 'student',
                     label: 'Student',
@@ -161,12 +161,12 @@ export default function Requests() {
                       </>
                     ),
                   },
-                  { key: 'createdAt', label: 'Filed', render: (r) => fmtDateTime(r.createdAt) },
-                  { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
-                  { key: 'actions', label: 'Action', render: (r) => <RequestActions request={r} onChange={state.reload} compact /> },
+                  { key: 'createdAt', label: 'Date and time filed', render: (r) => fmtDateTime(r.createdAt) },
+                  { key: 'status', label: 'Request status', render: (r) => <Badge status={r.status} /> },
+                  { key: 'actions', label: 'Next step', render: (r) => <RequestActions request={r} onChange={state.reload} compact /> },
                   {
                     key: 'details',
-                    label: '',
+                    label: 'Actions',
                     render: (r) => (
                       <button className="btn small secondary" onClick={() => setOpen(r.id)}>
                         Details

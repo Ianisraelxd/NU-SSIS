@@ -32,14 +32,14 @@ function SubjectForm({ subject, meta, onClose, onSaved }) {
     <Modal title={editing ? `Edit ${subject.code}` : 'Add a subject'} onClose={onClose}>
       <form onSubmit={save} noValidate>
         <div className="row">
-          <Field label="Code" htmlFor="sj-code">
+          <Field label="Subject code" htmlFor="sj-code">
             <input id="sj-code" className="input" value={form.code} onChange={set('code')} />
           </Field>
           <Field label="Units" htmlFor="sj-units">
             <input id="sj-units" type="number" min="1" max="12" className="input" value={form.units} onChange={set('units')} />
           </Field>
         </div>
-        <Field label="Description" htmlFor="sj-desc">
+        <Field label="Subject description" htmlFor="sj-desc">
           <input id="sj-desc" className="input" value={form.description} onChange={set('description')} />
         </Field>
         <div className="row">
@@ -125,12 +125,12 @@ function Schedule({ subjectId, onClose, onChanged }) {
               empty="No class meetings yet. Add one below."
               columns={[
                 { key: 'day', label: 'Day', render: (m) => DAYS[m.day - 1] },
-                { key: 'time', label: 'Time', render: (m) => `${fmtMinutes(m.startMin)} – ${fmtMinutes(m.endMin)}` },
+                { key: 'time', label: 'Class time', render: (m) => `${fmtMinutes(m.startMin)} – ${fmtMinutes(m.endMin)}` },
                 { key: 'room', label: 'Room' },
                 { key: 'instructor', label: 'Instructor' },
                 {
                   key: 'x',
-                  label: '',
+                  label: 'Actions',
                   render: (m) => (
                     <button className="btn small danger" onClick={() => remove(m.id)}>
                       Remove
@@ -145,7 +145,7 @@ function Schedule({ subjectId, onClose, onChanged }) {
                 Add a class meeting
               </h3>
               <div className="row">
-                <Field label="Day" htmlFor="m-day">
+                <Field label="Class day" htmlFor="m-day">
                   <select id="m-day" className="select" value={form.day} onChange={set('day')}>
                     {DAYS.map((d, i) => (
                       <option key={d} value={i + 1}>
@@ -154,10 +154,10 @@ function Schedule({ subjectId, onClose, onChanged }) {
                     ))}
                   </select>
                 </Field>
-                <Field label="Start" htmlFor="m-start">
+                <Field label="Class start time" htmlFor="m-start">
                   <input id="m-start" type="time" className="input" value={form.start} onChange={set('start')} />
                 </Field>
-                <Field label="End" htmlFor="m-end">
+                <Field label="Class end time" htmlFor="m-end">
                   <input id="m-end" type="time" className="input" value={form.end} onChange={set('end')} />
                 </Field>
               </div>
@@ -215,16 +215,16 @@ export default function Subjects() {
           <Card flush title={`${subjects.length} subjects`}>
             <Table
               columns={[
-                { key: 'code', label: 'Code', render: (s) => <b>{s.code}</b> },
-                { key: 'description', label: 'Description' },
+                { key: 'code', label: 'Subject code', render: (s) => <b>{s.code}</b> },
+                { key: 'description', label: 'Subject description' },
                 { key: 'units', label: 'Units', align: 'center' },
-                { key: 'deptCode', label: 'Dept.', render: (s) => s.deptCode ?? 'All' },
-                { key: 'offered', label: 'This term', render: (s) => (s.offered ? <Badge status="Active">Offered</Badge> : <Badge status="Cancelled">Not offered</Badge>) },
-                { key: 'meetings', label: 'Schedule', render: (s) => (s.meetings.length ? `${s.meetings.length} meeting${s.meetings.length === 1 ? '' : 's'}` : <span className="muted">none yet</span>) },
-                { key: 'enrolled', label: 'Records', align: 'center' },
+                { key: 'deptCode', label: 'Department', render: (s) => s.deptCode ?? 'All' },
+                { key: 'offered', label: 'Offered this term', render: (s) => (s.offered ? <Badge status="Active">Offered</Badge> : <Badge status="Cancelled">Not offered</Badge>) },
+                { key: 'meetings', label: 'Class meetings', render: (s) => (s.meetings.length ? `${s.meetings.length} meeting${s.meetings.length === 1 ? '' : 's'}` : <span className="muted">none yet</span>) },
+                { key: 'enrolled', label: 'Students enrolled', align: 'center' },
                 {
                   key: 'actions',
-                  label: '',
+                  label: 'Actions',
                   render: (s) => (
                     <div className="actions">
                       <button className="btn small secondary" onClick={() => setSchedule(s.id)}>

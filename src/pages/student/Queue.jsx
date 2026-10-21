@@ -139,11 +139,11 @@ export default function Queue() {
                 <Table
                   empty="You haven’t used the queue yet."
                   columns={[
-                    { key: 'number', label: 'Number', render: (t) => <b>{t.number}</b> },
+                    { key: 'number', label: 'Queue number', render: (t) => <b>{t.number}</b> },
                     { key: 'office', label: 'Office' },
-                    { key: 'service', label: 'Service' },
-                    { key: 'createdAt', label: 'Taken', render: (t) => fmtDateTime(t.createdAt) },
-                    { key: 'status', label: 'Result', render: (t) => <Badge status={t.status} /> },
+                    { key: 'service', label: 'Service requested' },
+                    { key: 'createdAt', label: 'Date and time taken', render: (t) => fmtDateTime(t.createdAt) },
+                    { key: 'status', label: 'Final status', render: (t) => <Badge status={t.status} /> },
                   ]}
                   rows={history}
                 />

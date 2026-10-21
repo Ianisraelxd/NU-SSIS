@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { db, lock, transaction } from '../db.js'
+import { feeFields, listChanges, requestChange, syncDue } from '../changes.js'
 import {
   ENROLLMENT_STEPS,
   HttpError,
@@ -42,18 +43,6 @@ const orInUse = async (or) =>
   await db.prepare('SELECT 1 FROM payments WHERE reference = ? UNION SELECT 1 FROM doc_requests WHERE or_number = ?').get(or, or)
 
 const login = async (id) => (await db.prepare('SELECT login_id FROM users WHERE id = ?').get(id))?.login_id
-
-// Keep one "Due" row equal to what is still owed.
-async function syncDue(studentId) {
-  const term = await currentTerm()
-  const { balance } = await balanceFor(studentId)
-  const previous = (await db.prepare("SELECT MIN(due_on) AS d FROM payments WHERE student_id = ? AND term_id = ? AND status = 'Due'").get(studentId, term.id))?.d
-  await db.prepare("DELETE FROM payments WHERE student_id = ? AND term_id = ? AND status = 'Due'").run(studentId, term.id)
-  if (balance > 0) {
-    const fallback = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
-    await db.prepare("INSERT INTO payments (student_id, term_id, due_on, amount, status) VALUES (?,?,?,?, 'Due')").run(studentId, term.id, previous ?? fallback, balance)
-  }
-}
 
 // ---- overview ------------------------------------------------------------------------------
 router.get('/overview', async (_req, res) => {
@@ -121,6 +110,7 @@ router.get('/students/:id', async (req, res) => {
       )
       .all(student.id))
       .map((r) => ({ ...r, requestNo: reqNo(r.id) })),
+    changeRequests: await listChanges({ studentId: student.id }),
     enrollment: {
       status: state.status,
       step: state.step,
@@ -132,47 +122,46 @@ router.get('/students/:id', async (req, res) => {
   })
 })
 
-// ---- fees (manage student balances) --------------------------------------------------------------
-function feeFields(body) {
-  const name = String(body?.name ?? '').trim().slice(0, 60)
-  const amount = Number(body?.amount)
-  if (name.length < 2) throw new HttpError(400, 'Enter the fee name.')
-  if (!Number.isFinite(amount) || amount <= 0 || amount > 1000000) throw new HttpError(400, 'Enter an amount greater than zero.')
-  return { name, amount: Math.round(amount * 100) / 100 }
-}
-
-router.post('/students/:id/fees', async (req, res) => {
-  const f = feeFields(req.body)
-  if (!(await db.prepare('SELECT 1 FROM students WHERE user_id = ?').get(req.params.id))) throw new HttpError(404, 'Student not found.')
-  await transaction(async () => {
-    await db.prepare('INSERT INTO fees (student_id, term_id, name, amount) VALUES (?,?,?,?)').run(req.params.id, (await currentTerm()).id, f.name, f.amount)
-    await syncDue(Number(req.params.id))
-  })
-  await audit(req.user, 'fee.add', 'student', (await login(req.params.id)), `${f.name} ${peso(f.amount)}`)
-  res.status(201).json({ ok: true })
+// ---- fee changes and receipt voids need an Administrator --------------------------------------------
+// The Cashier records the money received. Changing what a student owes, or cancelling a receipt, is the Administrator's
+// decision: the Cashier files a request with a reason and nothing changes until it is approved (see changes.js).
+router.post('/students/:id/fee-requests', async (req, res) => {
+  const studentId = Number(req.params.id)
+  if (!(await db.prepare('SELECT 1 FROM students WHERE user_id = ?').get(studentId))) throw new HttpError(404, 'Student not found.')
+  const action = req.body?.action
+  if (!['add', 'update', 'delete'].includes(action)) throw new HttpError(400, 'Choose add, change or remove.')
+  let fee = null
+  if (action !== 'add') {
+    fee = await db.prepare('SELECT * FROM fees WHERE id = ? AND student_id = ?').get(req.body?.feeId, studentId)
+    if (!fee) throw new HttpError(404, 'Fee not found.')
+  }
+  const f = action === 'delete' ? { name: fee.name, amount: fee.amount } : feeFields(req.body)
+  const summary =
+    action === 'add'
+      ? `Add fee “${f.name}” ${peso(f.amount)}`
+      : action === 'update'
+        ? `Change fee “${fee.name}” ${peso(fee.amount)} to “${f.name}” ${peso(f.amount)}`
+        : `Remove fee “${fee.name}” ${peso(fee.amount)}`
+  const id = await requestChange(req.user, { kind: `fee.${action}`, studentId, targetId: fee?.id ?? null, name: f.name, amount: f.amount, summary, reason: req.body?.reason })
+  res.status(201).json({ id })
 })
 
-router.put('/fees/:id', async (req, res) => {
-  const f = feeFields(req.body)
-  const fee = await db.prepare('SELECT * FROM fees WHERE id = ?').get(req.params.id)
-  if (!fee) throw new HttpError(404, 'Fee not found.')
-  await transaction(async () => {
-    await db.prepare('UPDATE fees SET name = ?, amount = ? WHERE id = ?').run(f.name, f.amount, fee.id)
-    await syncDue(fee.student_id)
+router.post('/payments/:id/void-request', async (req, res) => {
+  const payment = await db.prepare("SELECT * FROM payments WHERE id = ? AND status = 'Paid'").get(req.params.id)
+  if (!payment) throw new HttpError(404, 'Paid payment not found.')
+  const id = await requestChange(req.user, {
+    kind: 'payment.void',
+    studentId: payment.student_id,
+    targetId: payment.id,
+    amount: payment.amount,
+    summary: `Void receipt ${payment.reference} (${peso(payment.amount)})`,
+    reason: req.body?.reason,
   })
-  await audit(req.user, 'fee.update', 'student', (await login(fee.student_id)), `${fee.name} ${peso(fee.amount)} → ${f.name} ${peso(f.amount)}`)
-  res.json({ ok: true })
+  res.status(201).json({ id })
 })
 
-router.delete('/fees/:id', async (req, res) => {
-  const fee = await db.prepare('SELECT * FROM fees WHERE id = ?').get(req.params.id)
-  if (!fee) throw new HttpError(404, 'Fee not found.')
-  await transaction(async () => {
-    await db.prepare('DELETE FROM fees WHERE id = ?').run(fee.id)
-    await syncDue(fee.student_id)
-  })
-  await audit(req.user, 'fee.delete', 'student', (await login(fee.student_id)), `${fee.name} ${peso(fee.amount)}`)
-  res.json({ ok: true })
+router.get('/change-requests', async (req, res) => {
+  res.json({ approvals: await listChanges({ status: ['Pending', 'Approved', 'Rejected'].includes(req.query.status) ? req.query.status : 'all' }) })
 })
 
 // ---- tuition payments -------------------------------------------------------------------------------
@@ -184,11 +173,10 @@ router.post('/students/:id/payments', async (req, res) => {
   const { balance } = await balanceFor(studentId)
   if (!Number.isFinite(amount) || amount <= 0) throw new HttpError(400, 'Enter the amount received.')
   if (amount > balance) throw new HttpError(400, `The student only owes ${peso(balance)}.`)
-  const typedOr = String(req.body?.orNumber ?? '').trim().toUpperCase().slice(0, 20)
 
   const payment = await transaction(async () => {
     // the receipt number is chosen and used inside one transaction, so two cashiers can never get the same one
-    const or = typedOr || (await nextOrNumber())
+    const or = await nextOrNumber()
     if (await orInUse(or)) throw new HttpError(409, `Official receipt ${or} was already used.`)
     const row = await db
       .prepare(
@@ -203,20 +191,6 @@ router.post('/students/:id/payments', async (req, res) => {
   await notify(studentId, `Payment of ${peso(amount)} received (${or}). Remaining balance: ${peso((await balanceFor(studentId)).balance)}.`, '/account')
   await audit(req.user, 'payment.record', 'payment', or, `${peso(amount)} (${method}) for ${(await login(studentId))}`)
   res.status(201).json({ id: payment.id, orNumber: or })
-})
-
-router.post('/payments/:id/void', async (req, res) => {
-  const payment = await db.prepare("SELECT * FROM payments WHERE id = ? AND status = 'Paid'").get(req.params.id)
-  if (!payment) throw new HttpError(404, 'Paid payment not found.')
-  const reason = String(req.body?.reason ?? '').trim().slice(0, 200)
-  if (reason.length < 3) throw new HttpError(400, 'Give a reason for voiding this receipt.')
-  await transaction(async () => {
-    await db.prepare("UPDATE payments SET status = 'Void', void_reason = ? WHERE id = ?").run(reason, payment.id)
-    await syncDue(payment.student_id)
-  })
-  await notify(payment.student_id, `Receipt ${payment.reference} (${peso(payment.amount)}) was voided: ${reason}`, '/account')
-  await audit(req.user, 'payment.void', 'payment', payment.reference, `${peso(payment.amount)} for ${(await login(payment.student_id))} — ${reason}`)
-  res.json({ ok: true })
 })
 
 // Official receipt data (tuition payment or document fee)
@@ -255,9 +229,8 @@ router.post('/requests/:id/verify', async (req, res) => {
   if (row.status !== 'For Payment') throw new HttpError(409, 'This request is not waiting for payment.')
   const amount = req.body?.amount == null || req.body.amount === '' ? row.totalFee : Math.round(Number(req.body.amount) * 100) / 100
   if (amount !== row.totalFee) throw new HttpError(400, `The fee for this request is exactly ${peso(row.totalFee)}.`)
-  const typedOr = String(req.body?.orNumber ?? '').trim().toUpperCase().slice(0, 20)
   const { result, or } = await transaction(async () => {
-    const or = typedOr || (await nextOrNumber())
+    const or = await nextOrNumber()
     if (await orInUse(or)) throw new HttpError(409, `Official receipt ${or} was already used.`)
     const result = await moveRequest(row.id, 'Processing', req.user, {
       note: `Payment of ${peso(amount)} verified (${or})`,
