@@ -3,7 +3,7 @@
 Covers the testing section of the paper: test types, test cases and security testing with at least three vulnerabilities. Run everything with:
 
 ```bash
-npm test                  # 70 automated tests (node:test)
+npm test                  # 74 automated tests (node:test)
 npm run test:postgres     # the same tests through the real pg driver (the path Neon uses)
 node scripts/perf.mjs     # load test against a running server
 ```
@@ -60,7 +60,7 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 
 | Measure | Result |
 | --- | --- |
-| Automated tests | 70 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
+| Automated tests | 74 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
 | Load test | _Paste the output of `node scripts/perf.mjs` here (requests/sec, p50, p95, errors)_ |
 
 ## 9.5 Defect log (template)

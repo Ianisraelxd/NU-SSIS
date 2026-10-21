@@ -1,4 +1,4 @@
-import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
+import { scryptSync, randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { db, inTransaction } from './db.js'
 import { publish } from './realtime.js'
 
@@ -8,10 +8,30 @@ export function hashPassword(password) {
 }
 
 export function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':')
+  const [salt, hash] = String(stored).split(':')
+  if (!salt || !hash) return false
   const given = scryptSync(password, salt, 64)
   const expected = Buffer.from(hash, 'hex')
   return given.length === expected.length && timingSafeEqual(given, expected)
+}
+
+// Session tokens are only ever stored as a SHA-256 hash, so a leaked database cannot be used to sign in.
+export const hashToken = (token) => createHash('sha256').update(String(token)).digest('hex')
+
+// A real hash to compare against when the account does not exist, so the response time does not
+// reveal whether an ID is registered.
+export const DUMMY_HASH = hashPassword('not-a-real-password')
+
+const COMMON_PASSWORDS = new Set(['password', 'password1', 'password123', '12345678', '123456789', 'qwertyuiop', 'iloveyou', 'admin123', 'welcome123', 'letmein123'])
+// Returns a message when the password is too weak, otherwise null.
+export function passwordProblem(password, loginId = '') {
+  const p = String(password)
+  if (p.length < 8) return 'New password must be at least 8 characters.'
+  if (p.length > 128) return 'New password must be 128 characters or fewer.'
+  if (COMMON_PASSWORDS.has(p.toLowerCase())) return 'That password is too common. Choose something harder to guess.'
+  if (loginId && p.toLowerCase().includes(String(loginId).toLowerCase())) return 'The password must not contain your own ID.'
+  if (new Set(p).size === 1) return 'Choose a password that is not one repeated character.'
+  return null
 }
 
 export class HttpError extends Error {

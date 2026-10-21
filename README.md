@@ -279,7 +279,7 @@ All routes are under `/api`, JSON in and out, `Authorization: Bearer <token>` af
 ## Testing
 
 ```bash
-npm test                  # 70 automated tests on a throw-away embedded PostgreSQL
+npm test                  # 74 automated tests on a throw-away embedded PostgreSQL
 node scripts/perf.mjs     # load test against a running server
 npm run lint
 ```
@@ -361,6 +361,7 @@ The project follows Scrum. Everything is in [`docs/`](docs/README.md):
 | [Requirements traceability](docs/07-requirements-traceability.md) | Requirement → code → test |
 | [System models](docs/08-system-models.md) | DFD, use case, activity, class, ERD |
 | [Test plan](docs/09-test-plan.md) | Test levels, security tests, defect log |
+| [Security checklist](docs/13-security-checklist.md) | What is protected, and the recommended patches in priority order |
 | [Ethical and legal notes](docs/10-ethical-and-legal-notes.md) | Draft for the team |
 | [Deployment](docs/11-deployment.md) | Live URL guide |
 | [Master spec gap analysis](docs/12-master-spec-gap-analysis.md) | Enterprise specification vs. code, roadmap |

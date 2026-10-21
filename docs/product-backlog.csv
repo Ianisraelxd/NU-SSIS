@@ -62,7 +62,7 @@ ID,Module,Item,Priority,Status,Notes
 "SQ-03","Security & Quality","Rate limiting","High","Built","600 requests / minute / IP on the API (configurable)"
 "SQ-04","Security & Quality","SQL-injection protection","High","Built","Every query is parameterised"
 "SQ-05","Security & Quality","Role-based access control","High","Built","Each module accepts only its role; department data scoped by department"
-"SQ-06","Security & Quality","Automated tests (unit, integration, security) and a load-test script","High","Built","70 tests: npm test. Load test: scripts/perf.mjs"
+"SQ-06","Security & Quality","Automated tests (unit, integration, security) and a load-test script","High","Built","74 tests: npm test. Load test: scripts/perf.mjs"
 "SQ-07","Security & Quality","Light / dark mode, responsive layout, accessible UI","Low","Built","Keyboard navigation, focus rings, reduced-motion support"
 "PL-01","Planned","Live deployment (public URL)","High","Planned","Required by the paper (Task 6). See docs/11-deployment.md"
 "PL-02","Planned","Email / SMS notifications","Medium","Planned","The preference switch exists; nothing is sent yet"

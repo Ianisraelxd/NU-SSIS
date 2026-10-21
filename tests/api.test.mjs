@@ -646,3 +646,36 @@ describe('schedule conflicts', () => {
     assert.equal((await patch(`/department/enrollment/${req.id}`, tokens.ccit, { decision: 'return', remarks: 'Your schedule has a conflict.' })).status, 200)
   })
 })
+
+describe('security hardening', () => {
+  test('weak or common passwords are refused when changing a password', async () => {
+    const j = await login('student', '26001008')
+    for (const next of ['password123', '11111111', '26001008abc', 'short']) {
+      assert.equal((await post('/settings/password', j, { current: PASSWORDS.student, next })).status, 400, next)
+    }
+  })
+
+  test('the sign-in token is not stored as-is in the database', async () => {
+    const t = await login('student', '26001007')
+    const r = await fetch(BASE + '/auth/me', { headers: { authorization: `Bearer ${t}` } })
+    assert.equal(r.status, 200)
+    // a hash of the token must not work as a token
+    const { createHash } = await import('node:crypto')
+    const hashed = createHash('sha256').update(t).digest('hex')
+    assert.equal((await fetch(BASE + '/auth/me', { headers: { authorization: `Bearer ${hashed}` } })).status, 401)
+  })
+
+  test('security headers are sent and a non-JSON write is refused', async () => {
+    const r = await fetch(BASE + '/auth/me')
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(r.headers.get('x-frame-options'), 'DENY')
+    assert.equal(r.headers.get('cross-origin-opener-policy'), 'same-origin')
+    const form = await fetch(BASE + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'loginId=a&password=b' })
+    assert.equal(form.status, 415)
+  })
+
+  test('non-text sign-in values are rejected without a server error', async () => {
+    const r = await post('/auth/login', null, { role: 'student', loginId: { $ne: 1 }, password: ['x'] })
+    assert.equal(r.status, 400)
+  })
+})

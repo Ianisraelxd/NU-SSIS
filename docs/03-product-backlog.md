@@ -108,7 +108,7 @@ The complete list of what the system needs, built from the **System Requirements
 | SQ-03 | Rate limiting | **High** | Built | 600 requests / minute / IP on the API (configurable) |
 | SQ-04 | SQL-injection protection | **High** | Built | Every query is parameterised |
 | SQ-05 | Role-based access control | **High** | Built | Each module accepts only its role; department data scoped by department |
-| SQ-06 | Automated tests (unit, integration, security) and a load-test script | **High** | Built | 70 tests: npm test. Load test: scripts/perf.mjs |
+| SQ-06 | Automated tests (unit, integration, security) and a load-test script | **High** | Built | 74 tests: npm test. Load test: scripts/perf.mjs |
 | SQ-07 | Light / dark mode, responsive layout, accessible UI | Low | Built | Keyboard navigation, focus rings, reduced-motion support |
 
 ## Planned

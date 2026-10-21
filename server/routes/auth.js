@@ -2,9 +2,10 @@ import { Router } from 'express'
 import { randomBytes } from 'node:crypto'
 import { db } from '../db.js'
 import { FEATURES } from '../config.js'
-import { HttpError, audit, hashPassword, verifyPassword } from '../util.js'
+import { DUMMY_HASH, HttpError, audit, hashPassword, hashToken, verifyPassword } from '../util.js'
 
 const SESSION_DAYS = 7
+const MAX_SESSIONS = 10 // oldest sessions are dropped beyond this many devices
 const MAX_FAILED_LOGINS = 5 // then the account locks
 const LOCK_MINUTES = 15
 
@@ -35,7 +36,7 @@ export function requireAuth(role) {
         `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token = ? AND s.expires_at > ?`,
       )
-      .get(token, new Date().toISOString())
+      .get(hashToken(token), new Date().toISOString())
     if (!row) throw new HttpError(401, 'Your session has expired. Please sign in again.')
     if (!row.active) throw new HttpError(401, 'This account has been disabled. Contact the administrator.')
     if (roles && !roles.includes(row.role)) throw new HttpError(403, 'You do not have access to this page.')
@@ -92,7 +93,9 @@ router.post('/login', async (req, res) => {
     throw new HttpError(423, `Too many failed attempts. This account is locked for another ${minutes} minute${minutes === 1 ? '' : 's'}.`)
   }
 
-  if (!user || !verifyPassword(String(password), user.password_hash)) {
+  if (typeof password !== 'string' || typeof loginId !== 'string') throw new HttpError(400, 'Enter your ID and password.')
+  const passwordOk = verifyPassword(password, user ? user.password_hash : DUMMY_HASH)
+  if (!user || !passwordOk) {
     let attemptsLeft = null
     if (!user) attemptsLeft = phantomLeft(`${role}:${id}`)
     if (user) {
@@ -122,7 +125,8 @@ router.post('/login', async (req, res) => {
   await db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').run(user.id)
   const token = randomBytes(32).toString('hex')
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString()
-  await db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)').run(token, user.id, expires)
+  await db.prepare('DELETE FROM sessions WHERE user_id = ? AND (expires_at <= ? OR token NOT IN (SELECT token FROM sessions WHERE user_id = ? ORDER BY expires_at DESC LIMIT ?))').run(user.id, new Date().toISOString(), user.id, MAX_SESSIONS - 1)
+  await db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)').run(hashToken(token), user.id, expires)
   await logAttempt(req, { loginId: id, role, userId: user.id, success: true, reason: 'signed in' })
   await audit(user, 'login', 'user', user.login_id)
   res.json({ token, user: (await publicUser(user)) })
@@ -131,7 +135,7 @@ router.post('/login', async (req, res) => {
 router.get('/me', requireAuth(), async (req, res) => res.json({ user: (await publicUser(req.user)) }))
 
 router.post('/logout', requireAuth(), async (req, res) => {
-  await db.prepare('DELETE FROM sessions WHERE token = ?').run(req.token)
+  await db.prepare('DELETE FROM sessions WHERE token = ?').run(hashToken(req.token))
   res.json({ ok: true })
 })
 
