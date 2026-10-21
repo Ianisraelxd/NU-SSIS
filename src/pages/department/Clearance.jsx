@@ -26,14 +26,14 @@ export default function DepartmentClearance() {
                 empty="No students match."
                 columns={[
                   { key: 'studentNo', label: 'Student no.', render: (s) => <span className="mono">{s.studentNo}</span> },
-                  { key: 'name', label: 'Name', render: (s) => <b>{s.name}</b> },
-                  { key: 'deptClearance', label: 'Department line', render: (s) => <Badge status={s.deptClearance} /> },
-                  { key: 'requirements', label: 'Requirements', align: 'center', render: (s) => (s.requirements.total ? `${s.requirements.verified} / ${s.requirements.total} verified` : 'none') },
+                  { key: 'name', label: 'Student name', render: (s) => <b>{s.name}</b> },
+                  { key: 'deptClearance', label: 'Department clearance line', render: (s) => <Badge status={s.deptClearance} /> },
+                  { key: 'requirements', label: 'Requirements verified', align: 'center', render: (s) => (s.requirements.total ? `${s.requirements.verified} / ${s.requirements.total} verified` : 'none') },
                   { key: 'clearance', label: 'All offices', align: 'center', render: (s) => `${s.clearance.cleared} / ${s.clearance.total} cleared` },
-                  { key: 'overall', label: 'Overall', render: (s) => <Badge status={s.clearance.hold ? 'Hold' : s.clearance.complete ? 'Cleared' : 'Pending'} /> },
+                  { key: 'overall', label: 'Overall clearance', render: (s) => <Badge status={s.clearance.hold ? 'Hold' : s.clearance.complete ? 'Cleared' : 'Pending'} /> },
                   {
                     key: 'x',
-                    label: '',
+                    label: 'Actions',
                     render: (s) => (
                       <button className="btn small secondary" onClick={() => setOpen(s.id)}>
                         Review

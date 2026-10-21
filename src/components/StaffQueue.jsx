@@ -145,11 +145,11 @@ export default function StaffQueue() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Number</th>
+                        <th>Queue number</th>
                         <th>Student</th>
-                        <th>Service</th>
-                        <th>Taken</th>
-                        <th>Result</th>
+                        <th>Service requested</th>
+                        <th>Date and time taken</th>
+                        <th>Final status</th>
                       </tr>
                     </thead>
                     <tbody>

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import ScheduleReview from '../../components/ScheduleReview.jsx'
 import { Async, Badge, Card, Field, Modal, PageHead, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { burst } from '../../lib/fx.js'
@@ -105,8 +106,8 @@ export default function RegistrarEnrollment() {
                     <table className="table">
                       <thead>
                         <tr>
-                          <th>Subject</th>
-                          <th>Description</th>
+                          <th>Subject code</th>
+                          <th>Subject description</th>
                           <th className="center">Units</th>
                         </tr>
                       </thead>
@@ -129,6 +130,7 @@ export default function RegistrarEnrollment() {
                       </tfoot>
                     </table>
                   </div>
+                  <ScheduleReview schedule={r.schedule} conflicts={r.conflicts} />
                   <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>
                     Submitted {fmtDateTime(r.submittedAt)}
                     {r.deptReviewedAt ? ` · reviewed by ${r.deptReviewer ?? 'department'} ${fmtDateTime(r.deptReviewedAt)}` : ''}
@@ -136,7 +138,7 @@ export default function RegistrarEnrollment() {
                   </p>
                   {r.status === 'For Registrar Approval' && (
                     <div className="actions" style={{ marginTop: 14 }}>
-                      <button className="btn" onClick={(e) => approve(r, e)}>
+                      <button className="btn" disabled={r.conflicts.length > 0} title={r.conflicts.length ? 'Schedule conflict — return it to the student' : undefined} onClick={(e) => approve(r, e)}>
                         Approve enrollment
                       </button>
                       <button className="btn danger" onClick={() => setReturning(r)}>

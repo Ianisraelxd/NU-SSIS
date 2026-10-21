@@ -18,10 +18,10 @@ function CodeNameDialog({ title, initial, onSave, onClose }) {
   return (
     <Modal title={title} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <Field label="Code" htmlFor="cn-code" help="Short, e.g. CCIT">
+        <Field label="Department code" htmlFor="cn-code" help="Short, e.g. CCIT">
           <input id="cn-code" className="input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
         </Field>
-        <Field label="Name" htmlFor="cn-name">
+        <Field label="Department name" htmlFor="cn-name">
           <input id="cn-name" className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         </Field>
         {error && (

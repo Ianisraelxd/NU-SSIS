@@ -44,11 +44,11 @@ export default function Audit() {
               <Table
                 empty="Nothing matches."
                 columns={[
-                  { key: 'createdAt', label: 'When', render: (r) => fmtDateTime(r.createdAt) },
-                  { key: 'actor', label: 'Who', render: (r) => r.actor ?? <span className="muted">Anonymous</span> },
-                  { key: 'role', label: 'Role', render: (r) => (r.role ? ROLE_LABEL[r.role] : '—') },
-                  { key: 'action', label: 'Action', render: (r) => <Badge tone={toneOf(r.action)}>{r.action}</Badge> },
-                  { key: 'entity', label: 'Target', render: (r) => (r.entityId ? `${r.entity} ${r.entityId}` : r.entity ?? '—') },
+                  { key: 'createdAt', label: 'Date and time', render: (r) => fmtDateTime(r.createdAt) },
+                  { key: 'actor', label: 'Performed by', render: (r) => r.actor ?? <span className="muted">Anonymous</span> },
+                  { key: 'role', label: 'User role', render: (r) => (r.role ? ROLE_LABEL[r.role] : '—') },
+                  { key: 'action', label: 'Action performed', render: (r) => <Badge tone={toneOf(r.action)}>{r.action}</Badge> },
+                  { key: 'entity', label: 'Record affected', render: (r) => (r.entityId ? `${r.entity} ${r.entityId}` : r.entity ?? '—') },
                   { key: 'detail', label: 'Details', render: (r) => r.detail ?? '—' },
                 ]}
                 rows={rows}

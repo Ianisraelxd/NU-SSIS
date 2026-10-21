@@ -40,10 +40,10 @@ function AnnouncementForm({ base, initial, onClose, onSaved }) {
         </>
       }
     >
-      <Field label="Title" htmlFor="ann-title" error={error}>
+      <Field label="Announcement title" htmlFor="ann-title" error={error}>
         <input id="ann-title" className="input" maxLength={140} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
       </Field>
-      <Field label="Message" htmlFor="ann-body" help={initial ? undefined : 'Students are notified when you post.'}>
+      <Field label="Announcement message" htmlFor="ann-body" help={initial ? undefined : 'Students are notified when you post.'}>
         <textarea id="ann-body" className="textarea" rows={6} maxLength={2000} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} />
       </Field>
     </Modal>

@@ -296,12 +296,12 @@ function RegistrarConfig() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>Document</th>
+                    <th>Document name</th>
                     <th>Fee (₱)</th>
                     <th>Requirements shown to students</th>
-                    <th>Needs clearance</th>
-                    <th>Available</th>
-                    <th />
+                    <th>Needs full clearance</th>
+                    <th>Offered to students</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>

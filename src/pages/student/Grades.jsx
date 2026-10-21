@@ -36,9 +36,9 @@ export default function Grades() {
                   { key: 'code', label: 'Course code', render: (r) => <b>{r.code}</b> },
                   { key: 'description', label: 'Course description' },
                   { key: 'units', label: 'Units', align: 'center' },
-                  { key: 'prelim', label: 'Prelim', align: 'center', render: (r) => dash(r.prelim) },
-                  { key: 'midterm', label: 'Midterm', align: 'center', render: (r) => dash(r.midterm) },
-                  { key: 'finals', label: 'Finals', align: 'center', render: (r) => dash(r.finals) },
+                  { key: 'prelim', label: 'Prelim grade', align: 'center', render: (r) => dash(r.prelim) },
+                  { key: 'midterm', label: 'Midterm grade', align: 'center', render: (r) => dash(r.midterm) },
+                  { key: 'finals', label: 'Finals grade', align: 'center', render: (r) => dash(r.finals) },
                   { key: 'final', label: 'Final grade', align: 'center', render: (r) => (r.final == null ? '--' : <b>{point(r.point)}</b>) },
                   { key: 'remark', label: 'Remarks', render: (r) => <Badge status={r.remark} /> },
                 ]}

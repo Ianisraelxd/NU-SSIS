@@ -84,7 +84,7 @@ export function StudentModal({ id, onClose, onChanged }) {
                     { key: 'remarks', label: 'Notes', render: (r) => r.remarks ?? (r.verifiedAt ? `Verified ${fmtShort(r.verifiedAt)}` : '—') },
                     {
                       key: 'x',
-                      label: '',
+                      label: 'Actions',
                       render: (r) => (
                         <div className="actions">
                           {r.status !== 'Verified' && (
@@ -136,13 +136,13 @@ export function StudentModal({ id, onClose, onChanged }) {
                   rowKey="code"
                   empty="No subjects yet this term."
                   columns={[
-                    { key: 'code', label: 'Code', render: (g) => <b>{g.code}</b> },
-                    { key: 'description', label: 'Description' },
+                    { key: 'code', label: 'Subject code', render: (g) => <b>{g.code}</b> },
+                    { key: 'description', label: 'Subject description' },
                     { key: 'units', label: 'Units', align: 'center' },
-                    { key: 'prelim', label: 'Prelim', align: 'center', render: (g) => dash(g.prelim) },
-                    { key: 'midterm', label: 'Midterm', align: 'center', render: (g) => dash(g.midterm) },
-                    { key: 'finals', label: 'Finals', align: 'center', render: (g) => dash(g.finals) },
-                    { key: 'final', label: 'Final', align: 'center', render: (g) => (g.final == null ? '--' : <b>{point(g.point)}</b>) },
+                    { key: 'prelim', label: 'Prelim grade', align: 'center', render: (g) => dash(g.prelim) },
+                    { key: 'midterm', label: 'Midterm grade', align: 'center', render: (g) => dash(g.midterm) },
+                    { key: 'finals', label: 'Finals grade', align: 'center', render: (g) => dash(g.finals) },
+                    { key: 'final', label: 'Final grade', align: 'center', render: (g) => (g.final == null ? '--' : <b>{point(g.point)}</b>) },
                   ]}
                   rows={d.grades}
                 />
@@ -178,14 +178,14 @@ export default function DepartmentStudents() {
                 empty="No students match."
                 columns={[
                   { key: 'studentNo', label: 'Student no.', render: (s) => <span className="mono">{s.studentNo}</span> },
-                  { key: 'name', label: 'Name', render: (s) => <b>{s.name}</b> },
+                  { key: 'name', label: 'Student name', render: (s) => <b>{s.name}</b> },
                   { key: 'section', label: 'Year / section', render: (s) => `${s.yearLevel} · ${s.section}` },
-                  { key: 'enrollment', label: 'Enrollment', render: (s) => <Badge status={s.enrollment} /> },
-                  { key: 'requirements', label: 'Requirements', align: 'center', render: (s) => (s.requirements.total ? `${s.requirements.verified} / ${s.requirements.total}` : '—') },
-                  { key: 'deptClearance', label: 'Dept. clearance', render: (s) => <Badge status={s.deptClearance} /> },
+                  { key: 'enrollment', label: 'Enrollment status', render: (s) => <Badge status={s.enrollment} /> },
+                  { key: 'requirements', label: 'Requirements verified', align: 'center', render: (s) => (s.requirements.total ? `${s.requirements.verified} / ${s.requirements.total}` : '—') },
+                  { key: 'deptClearance', label: 'Department clearance', render: (s) => <Badge status={s.deptClearance} /> },
                   {
                     key: 'x',
-                    label: '',
+                    label: 'Actions',
                     render: (s) => (
                       <button className="btn small secondary" onClick={() => setOpen(s.id)}>
                         Open

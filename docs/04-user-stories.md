@@ -58,7 +58,7 @@ Format: *As a ⟨user⟩, I want ⟨goal⟩ so that ⟨benefit⟩.* Each story l
 **US-20 · Payments and receipts (CS-02, CS-05)** — As the Cashier, I want to record a payment and issue an official receipt so that the student's balance is correct.
 - The amount cannot exceed the balance; the OR number is automatic and never duplicated; the receipt prints.
 
-**US-21 · Fees and balances (CS-01, CS-03, CS-04)** — As the Cashier, I want to adjust fees and void a wrong receipt (with a reason) so that records can be corrected.
+**US-21 · Fees and balances (CS-01, CS-03, CS-04)** — As the Cashier, I want to ask for a fee to be changed or a wrong receipt to be voided (with a reason), and the Administrator to approve it, so that records can be corrected without anyone editing their own payments.
 
 **US-22 · Confirm payments (CS-06)** — As the Cashier, I want to confirm enrollment payment and verify document fees so that processing can continue.
 - Enrollment can be confirmed only after the minimum payment; a document fee must match exactly.

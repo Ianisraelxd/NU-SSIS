@@ -1975,3 +1975,156 @@ a.stat:active { transform: translateY(-1px) scale(0.99); }
 .btn-spin { display: inline-block; flex: none; width: 1em; height: 1em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; vertical-align: -0.15em; margin-right: 0.5em; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .loadbar-fill { animation: none; width: 100%; opacity: .6; } .btn-spin { animation-duration: 2s; } }
+
+/* ---- tablet and phone navigation ---- */
+.scrim {
+  display: none;
+}
+
+.drawer-close {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  color: #fff;
+}
+
+.drawer-close:hover {
+  background: rgb(255 255 255 / 14%);
+}
+
+.back-btn {
+  width: auto;
+  min-width: 42px;
+  padding: 0 14px 0 10px;
+  gap: 6px;
+  grid-auto-flow: column;
+  border: 1.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+@media (max-width: 1000px) {
+  /* a real tap target behind the menu: touching anywhere outside it closes it */
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 49;
+    background: rgb(5 10 30 / 55%);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  .scrim.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar.open {
+    box-shadow: 0 0 40px rgb(0 0 0 / 45%);
+  }
+
+  .drawer-close {
+    display: grid;
+  }
+
+  body.drawer-open {
+    overflow: hidden;
+  }
+
+  /* comfortable touch targets */
+  .icon-btn {
+    width: 46px;
+    height: 46px;
+  }
+
+  .back-btn {
+    width: auto;
+    height: 44px;
+  }
+
+  .nav-link {
+    min-height: 46px;
+  }
+}
+
+@media (max-width: 640px) {
+  .back-btn span {
+    display: none;
+  }
+
+  .back-btn {
+    width: 46px;
+    padding: 0;
+  }
+}
+
+/* ---- view only ----
+   Nothing on screen is highlighted by accident when tapping or dragging. Typed text, passwords and the
+   one-time password the Administrator hands over stay selectable. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea,
+select,
+[contenteditable='true'],
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.secret {
+  -webkit-user-select: all;
+  user-select: all;
+}
+
+/* ---- schedule conflicts ---- */
+.pick .times {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pick.blocked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pick.blocked input {
+  cursor: not-allowed;
+}
+
+.pick .clash-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--bad);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.row-clash td {
+  background: color-mix(in srgb, var(--bad) 12%, transparent);
+}
+
+.schedule-review {
+  margin-top: 16px;
+}
+
+.schedule-review h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}

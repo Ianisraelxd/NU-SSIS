@@ -27,7 +27,7 @@ export default function ReceiptModal({ kind, id, onClose }) {
             <h3>{r.school}</h3>
             <p className="sub">Official Receipt</p>
             <dl>
-              <dt>OR number</dt>
+              <dt>Official receipt number</dt>
               <dd>{r.orNumber}</dd>
               <dt>Date</dt>
               <dd>{fmtDateTime(r.paidAt)}</dd>

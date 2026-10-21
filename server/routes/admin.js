@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { db, transaction } from '../db.js'
+import { decideChange, listChanges } from '../changes.js'
 import { FEATURES } from '../config.js'
 import {
   HttpError,
@@ -36,6 +37,7 @@ router.get('/overview', async (_req, res) => {
     locked: (await count('SELECT COUNT(*) AS c FROM users WHERE locked_until > ?', new Date().toISOString())),
     openRequests: (await count("SELECT COUNT(*) AS c FROM doc_requests WHERE status IN ('Pending','For Payment','Processing','Ready for Release')")),
     ticketsToday: (await count('SELECT COUNT(*) AS c FROM queue_tickets WHERE queue_date = ?', localDate())),
+    pendingApprovals: await count("SELECT COUNT(*) AS c FROM change_requests WHERE status = 'Pending'"),
     failedLogins24h: (await count("SELECT COUNT(*) AS c FROM audit_log WHERE action = 'login.failed' AND created_at >= ?", new Date(Date.now() - 86400000).toISOString())),
     collectedToday:
       (await db.prepare("SELECT COALESCE(SUM(amount),0) AS v FROM payments WHERE status = 'Paid' AND paid_at >= ?").get(startOfDayIso())).v +
@@ -284,6 +286,16 @@ router.put('/terms/current', async (req, res) => {
   res.json({ ok: true })
 })
 
+// ---- approvals: fee changes and receipt voids asked for by a Cashier --------------------------------------------------
+router.get('/approvals', async (req, res) => {
+  res.json({ approvals: await listChanges({ status: req.query.status === 'all' ? 'all' : 'Pending' }) })
+})
+
+router.post('/approvals/:id/decide', async (req, res) => {
+  await decideChange(req.user, Number(req.params.id), req.body?.decision, req.body?.note)
+  res.json({ ok: true })
+})
+
 // ---- audit log ---------------------------------------------------------------------------------------------------
 router.get('/login-attempts', async (req, res) => {
   const { q, result } = req.query
@@ -354,7 +366,9 @@ const PERMISSIONS = [
   ['Documents', 'Approve, process and release requests', '—', 'full', '—', '—', '—'],
   ['Documents', 'Verify document payments', '—', '—', 'full', '—', '—'],
   ['Payments', 'View own balance and transactions', 'own', '—', '—', '—', '—'],
-  ['Payments', 'Record payments, manage fees, issue receipts', '—', '—', 'full', '—', '—'],
+  ['Payments', 'Record payments and issue official receipts (numbers are automatic)', '—', '—', 'full', '—', '—'],
+  ['Payments', 'Request a fee change or a receipt void (with a reason)', '—', '—', 'full', '—', '—'],
+  ['Payments', 'Approve or reject fee changes and receipt voids', '—', '—', '—', '—', 'full'],
   ['Queue', 'Take a queue number', 'full', '—', '—', '—', '—'],
   ['Queue', 'Call next, finish and skip tickets', '—', 'Registrar queue', 'Cashier queue', 'Department queue', '—'],
   ['Reports', 'Document, enrollment, clearance and queue reports', '—', 'full', '—', '—', 'full'],

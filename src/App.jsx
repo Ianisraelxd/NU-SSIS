@@ -34,6 +34,7 @@ const RegistrarRequests = lazy(() => import('./pages/registrar/Requests.jsx'))
 const RegistrarStudents = lazy(() => import('./pages/registrar/Students.jsx'))
 const RegistrarSubjects = lazy(() => import('./pages/registrar/Subjects.jsx'))
 // cashier
+const CashierChangeRequests = lazy(() => import('./pages/cashier/ChangeRequests.jsx'))
 const CashierDocuments = lazy(() => import('./pages/cashier/Documents.jsx'))
 const CashierHome = lazy(() => import('./pages/cashier/Home.jsx'))
 const CashierReports = lazy(() => import('./pages/cashier/Reports.jsx'))
@@ -46,6 +47,7 @@ const DepartmentStudents = lazy(() => import('./pages/department/Students.jsx'))
 // admin
 const AdminAnnouncements = lazy(() => import('./pages/admin/Announcements.jsx'))
 const AdminLoginAttempts = lazy(() => import('./pages/admin/LoginAttempts.jsx'))
+const AdminApprovals = lazy(() => import('./pages/admin/Approvals.jsx'))
 const AdminAudit = lazy(() => import('./pages/admin/Audit.jsx'))
 const AdminDepartments = lazy(() => import('./pages/admin/Departments.jsx'))
 const AdminHome = lazy(() => import('./pages/admin/Home.jsx'))
@@ -90,6 +92,7 @@ const CASHIER_NAV = [
   { to: 'queue', label: 'Queue Management' },
   { to: 'students', label: 'Students & Balances' },
   { to: 'documents', label: 'Document Payments' },
+  { to: 'changes', label: 'Change Requests' },
   { to: 'reports', label: 'Reports' },
 ]
 const DEPARTMENT_NAV = [
@@ -102,6 +105,7 @@ const DEPARTMENT_NAV = [
 const ADMIN_NAV = [
   { to: '', label: 'Home' },
   { to: 'users', label: 'User Accounts' },
+  { to: 'approvals', label: 'Approvals' },
   { to: 'departments', label: 'Departments & Programs' },
   { to: 'announcements', label: 'Announcements' },
   { to: 'reports', label: 'Reports' },
@@ -187,6 +191,7 @@ function AppRoutes() {
           <Route path="queue" element={<StaffQueue />} />
           <Route path="students" element={<CashierStudents />} />
           <Route path="documents" element={<CashierDocuments />} />
+          <Route path="changes" element={<CashierChangeRequests />} />
           <Route path="reports" element={<CashierReports />} />
           <Route path="settings" element={<Settings />} />
         </>,
@@ -214,6 +219,7 @@ function AppRoutes() {
           <Route path="departments" element={<AdminDepartments />} />
           <Route path="announcements" element={<AdminAnnouncements />} />
           <Route path="reports" element={<AdminReports />} />
+          <Route path="approvals" element={<AdminApprovals />} />
           <Route path="audit" element={<AdminAudit />} />
           <Route path="login-attempts" element={<AdminLoginAttempts />} />
           <Route path="permissions" element={<AdminPermissions />} />

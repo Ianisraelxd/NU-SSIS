@@ -3,8 +3,13 @@ import { CheckIcon } from '../../components/icons.jsx'
 import { Async, Badge, Card, PageHead, Stat, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { burst } from '../../lib/fx.js'
-import { subtitle } from '../../lib/format.js'
+import { DAYS, fmtMinutes, subtitle } from '../../lib/format.js'
 import { useApi } from '../../lib/hooks.js'
+
+const short = (day) => DAYS[day - 1].slice(0, 3)
+const timesOf = (s) => (s.meetings.length ? s.meetings.map((m) => `${short(m.day)} ${fmtMinutes(m.startMin)}–${fmtMinutes(m.endMin)} · ${m.room}`).join('  |  ') : 'Class times not set yet')
+// two subjects clash when they meet on the same day at overlapping times
+const clash = (a, b) => a.id !== b.id && a.meetings.some((x) => b.meetings.some((y) => x.day === y.day && x.startMin < y.endMin && y.startMin < x.endMin))
 
 const hint = (d) =>
   [
@@ -45,6 +50,11 @@ export default function Enrollment() {
         const units = d.available.filter((s) => selected.includes(s.id)).reduce((n, s) => n + s.units, 0)
         const over = units > d.maxUnits
         const toggle = (id) => setPicked(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
+        const pickedSubjects = d.available.filter((s) => selected.includes(s.id))
+        // a subject that overlaps one already picked is blocked; the same check protects a draft saved earlier
+        const blockerOf = (s) => (selected.includes(s.id) ? undefined : pickedSubjects.find((p) => clash(p, s)))
+        const clashing = pickedSubjects.filter((a, i) => pickedSubjects.some((b, j) => j !== i && clash(a, b)))
+        const hasClash = clashing.length > 0
         const chosen = d.available.filter((s) => d.selected.includes(s.id))
         return (
           <>
@@ -95,28 +105,73 @@ export default function Enrollment() {
                 <>
                   <Card title="Select your subjects" sub={`Subjects open for your program this term. You can take up to ${d.maxUnits} units.`}>
                     <div className="subject-pick">
-                      {d.available.map((s) => (
-                        <label key={s.id} className={`pick ${selected.includes(s.id) ? 'on' : ''}`}>
-                          <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
-                          <div>
-                            <b>{s.code}</b>
-                            <span>
-                              {s.description} · {s.units} unit{s.units === 1 ? '' : 's'}
-                            </span>
-                          </div>
-                        </label>
-                      ))}
+                      {d.available.map((s) => {
+                        const blocker = blockerOf(s)
+                        return (
+                          <label key={s.id} className={`pick ${selected.includes(s.id) ? 'on' : ''} ${blocker ? 'blocked' : ''}`} title={blocker ? `Conflicts with ${blocker.code}` : undefined}>
+                            <input type="checkbox" checked={selected.includes(s.id)} disabled={!!blocker} onChange={() => toggle(s.id)} />
+                            <div>
+                              <b>{s.code}</b>
+                              <span>
+                                {s.description} · {s.units} unit{s.units === 1 ? '' : 's'}
+                              </span>
+                              <small className="times">{timesOf(s)}</small>
+                              {blocker && <small className="clash-note">Can’t be picked — its class time overlaps {blocker.code}.</small>}
+                            </div>
+                          </label>
+                        )
+                      })}
                     </div>
                   </Card>
+                  {hasClash && (
+                    <div className="alert bad" role="alert">
+                      <div>
+                        <strong>Your schedule has a conflict.</strong> {clashing.map((s) => s.code).join(', ')} overlap. Remove one of them before you save or submit.
+                      </div>
+                    </div>
+                  )}
+                  {pickedSubjects.length > 0 && (
+                    <Card title="Your class schedule so far" sub="Based on the subjects you picked above.">
+                      <div className="table-wrap">
+                        <table className="table">
+                          <thead>
+                            <tr>
+                              <th>Day</th>
+                              <th>Class time</th>
+                              <th>Subject</th>
+                              <th>Room</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {pickedSubjects
+                              .flatMap((s) => s.meetings.map((m) => ({ ...m, code: s.code })))
+                              .sort((a, b) => a.day - b.day || a.startMin - b.startMin)
+                              .map((m, i) => (
+                                <tr key={i} className={clashing.some((c) => c.code === m.code) ? 'row-clash' : undefined}>
+                                  <td>{DAYS[m.day - 1]}</td>
+                                  <td>
+                                    {fmtMinutes(m.startMin)} – {fmtMinutes(m.endMin)}
+                                  </td>
+                                  <td>
+                                    <b>{m.code}</b>
+                                  </td>
+                                  <td>{m.room}</td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </Card>
+                  )}
                   <div className="units-meter">
                     <div>
                       <b style={{ fontSize: 20, color: over ? 'var(--bad)' : undefined }}>{units}</b> <span className="muted">of {d.maxUnits} units · {selected.length} subject{selected.length === 1 ? '' : 's'}</span>
                     </div>
                     <div className="actions">
-                      <button className="btn secondary" disabled={busy || over} onClick={(e) => save(d, selected, false, e)}>
+                      <button className="btn secondary" disabled={busy || over || hasClash} onClick={(e) => save(d, selected, false, e)}>
                         Save draft
                       </button>
-                      <button className="btn" disabled={busy || over || selected.length === 0} onClick={(e) => save(d, selected, true, e)}>
+                      <button className="btn" disabled={busy || over || hasClash || selected.length === 0} onClick={(e) => save(d, selected, true, e)}>
                         Submit for review
                       </button>
                     </div>
@@ -135,6 +190,7 @@ export default function Enrollment() {
                             <span>
                               {s.description} · {s.units} unit{s.units === 1 ? '' : 's'}
                             </span>
+                            <small className="times">{timesOf(s)}</small>
                           </div>
                         </div>
                       ))}

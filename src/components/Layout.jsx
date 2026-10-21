@@ -4,7 +4,7 @@ import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
 import { ROLE_LABEL, timeAgo } from '../lib/format.js'
 import { useRealtime, useRealtimeEvents } from '../lib/realtime.jsx'
-import { BellIcon, BulbIcon, Logo, MenuIcon, UserIcon } from './icons.jsx'
+import { BackIcon, BellIcon, BulbIcon, CloseIcon, Logo, MenuIcon, UserIcon } from './icons.jsx'
 import { Loading, useClickAway, useToast } from './ui.jsx'
 
 function NotificationBell({ base }) {
@@ -110,6 +110,40 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav, logoC
   const open = openAt === location.pathname
   const setOpen = (value) => setOpenAt(value ? location.pathname : null)
   const path = (to) => (to === '' ? base || '/' : `${base}/${to}`)
+  const navigate = useNavigate()
+  const home = path('')
+  const atHome = location.pathname === home || location.pathname === `${home}/`
+  // Back goes to the page the user came from; when the app was opened on this page it goes to the portal's home page
+  const goBack = () => (window.history.state?.idx > 0 ? navigate(-1) : navigate(home))
+
+  // Menu drawer on tablets and phones: Escape closes it, and the page behind it does not scroll while it is open
+  useEffect(() => {
+    if (!open) return undefined
+    const onKey = (e) => e.key === 'Escape' && setOpenAt(null)
+    document.addEventListener('keydown', onKey)
+    document.body.classList.add('drawer-open')
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.classList.remove('drawer-open')
+    }
+  }, [open])
+
+  // Swipe left to close the menu; swipe right from the left edge of the screen to open it
+  const touch = useRef(null)
+  const onTouchStart = (e) => {
+    const t = e.touches[0]
+    touch.current = { x: t.clientX, y: t.clientY }
+  }
+  const onTouchEnd = (e) => {
+    const start = touch.current
+    touch.current = null
+    if (!start) return
+    const t = e.changedTouches[0]
+    const dx = t.clientX - start.x
+    if (Math.abs(t.clientY - start.y) > 60 || Math.abs(dx) < 70) return
+    if (open && dx < 0) setOpenAt(null)
+    else if (!open && dx > 0 && start.x < 28) setOpen(true)
+  }
 
   const toggleTheme = async () => {
     try {
@@ -136,8 +170,12 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav, logoC
   )
 
   return (
-    <div className="shell">
+    <div className="shell" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <div className={`scrim ${open ? 'show' : ''}`} onClick={() => setOpenAt(null)} aria-hidden="true" />
       <aside className={`sidebar ${open ? 'open' : ''}`} aria-label="Main navigation">
+        <button className="icon-btn drawer-close" onClick={() => setOpenAt(null)} aria-label="Close menu">
+          <CloseIcon />
+        </button>
         <div className="brand">
           <Logo kind={kind} className={logoClass} />
           <small>National University</small>
@@ -154,9 +192,15 @@ export default function Layout({ kind, brandName, base, nav, secondaryNav, logoC
       <div className="main">
         <header className="topbar">
           <div className="who">
-            <button className="icon-btn menu-btn" onClick={() => setOpen(!open)} aria-label="Open menu">
+            <button className="icon-btn menu-btn" onClick={() => setOpen(!open)} aria-label={open ? 'Close menu' : 'Open menu'} aria-expanded={open}>
               <MenuIcon />
             </button>
+            {!atHome && (
+              <button className="icon-btn back-btn" onClick={goBack} aria-label="Go back to the previous page">
+                <BackIcon />
+                <span>Back</span>
+              </button>
+            )}
             <span className="id">{user.role === 'student' ? user.loginId : user.role === 'department' && user.department ? `${ROLE_LABEL.department} · ${user.department.code}` : ROLE_LABEL[user.role]}</span>
             <span className="sep" />
             <span className="name">{user.name}</span>

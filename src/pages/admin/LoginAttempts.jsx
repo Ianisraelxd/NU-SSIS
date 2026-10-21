@@ -39,12 +39,12 @@ export default function LoginAttempts() {
               <Table
                 empty="No attempts match."
                 columns={[
-                  { key: 'createdAt', label: 'When', render: (r) => fmtDateTime(r.createdAt) },
+                  { key: 'createdAt', label: 'Date and time', render: (r) => fmtDateTime(r.createdAt) },
                   { key: 'loginId', label: 'ID entered', render: (r) => r.loginId || '—' },
-                  { key: 'role', label: 'Portal', render: (r) => (r.role ? ROLE_LABEL[r.role] ?? r.role : '—') },
-                  { key: 'success', label: 'Result', render: (r) => <Badge tone={r.success ? 'good' : 'bad'}>{r.success ? 'Success' : 'Failed'}</Badge> },
-                  { key: 'reason', label: 'Reason', render: (r) => r.reason ?? '—' },
-                  { key: 'ip', label: 'Address', render: (r) => r.ip ?? '—' },
+                  { key: 'role', label: 'Portal used', render: (r) => (r.role ? ROLE_LABEL[r.role] ?? r.role : '—') },
+                  { key: 'success', label: 'Sign-in result', render: (r) => <Badge tone={r.success ? 'good' : 'bad'}>{r.success ? 'Success' : 'Failed'}</Badge> },
+                  { key: 'reason', label: 'Reason for the result', render: (r) => r.reason ?? '—' },
+                  { key: 'ip', label: 'IP address', render: (r) => r.ip ?? '—' },
                 ]}
                 rows={rows}
               />

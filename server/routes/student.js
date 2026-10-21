@@ -24,6 +24,8 @@ import {
   reqNo,
   scaleFor,
   termLabel,
+  findConflicts,
+  scheduleFor,
 } from '../util.js'
 import { FEATURES } from '../config.js'
 import { requireAuth } from './auth.js'
@@ -393,12 +395,18 @@ router.get('/grades', async (req, res) => {
 // Student selects subjects → Department reviews → Registrar approves → Cashier confirms payment.
 async function availableSubjects(studentId) {
   const dept = (await profile(studentId)).department_id
-  return await db
+  const subjects = await db
     .prepare(
       `SELECT id, code, description, units, year_level AS yearLevel FROM subjects
        WHERE offered = 1 AND (department_id IS NULL OR department_id = ?) ORDER BY code`,
     )
     .all(dept)
+  // class times, so the page can show them and stop the student from picking two subjects that overlap
+  const meetings = await scheduleFor(subjects.map((s) => s.id))
+  return subjects.map((s) => ({
+    ...s,
+    meetings: meetings.filter((m) => m.subjectId === s.id).map((m) => ({ day: m.day, startMin: m.startMin, endMin: m.endMin, room: m.room })),
+  }))
 }
 
 router.get('/enrollment', async (req, res) => {
@@ -447,6 +455,8 @@ router.put('/enrollment', async (req, res) => {
   const units = chosen.reduce((n, s) => n + s.units, 0)
   const max = await getNumber('maxUnits')
   if (units > max) throw new HttpError(400, `You can enroll in at most ${max} units (you picked ${units}).`)
+  const clashes = findConflicts(await scheduleFor(ids))
+  if (clashes.length) throw new HttpError(409, `Schedule conflict: ${clashes.map((c) => c.text).join('; ')}. Remove one of these subjects.`)
   const submit = !!req.body?.submit
   if (submit && !ids.length) throw new HttpError(400, 'Pick at least one subject before submitting.')
 

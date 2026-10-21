@@ -46,11 +46,11 @@ export async function documentsReport(period) {
       { label: 'Total Requests', value: rows.length },
       { label: 'Released', value: released.length },
       { label: 'Pending', value: rows.length - released.length },
-      { label: 'Avg Processing Time', value: fmt(avg(released.map((r) => days(new Date(r.completedAt) - new Date(r.createdAt)))), 'days') },
+      { label: 'Average Processing Time', value: fmt(avg(released.map((r) => days(new Date(r.completedAt) - new Date(r.createdAt)))), 'days') },
     ],
     chart: { title: 'Requests per Document Type', series: ['Released', 'Pending'], rows: byType },
     table: {
-      columns: ['Request', 'Student', 'Document', 'Filed', 'Status'],
+      columns: ['Request number', 'Student', 'Document requested', 'Date and time filed', 'Request status'],
       rows: rows.slice(0, 100).map((r) => [r.requestNo, `${r.studentName} (${r.studentNo})`, r.document, r.createdAt, r.status]),
     },
   }
@@ -104,7 +104,7 @@ export async function enrollmentReport() {
       }),
     },
     table: {
-      columns: ['Enrollment step', 'Students'],
+      columns: ['Enrollment step', 'Number of students'],
       rows: [...ENROLLMENT_STEPS.slice(0, 4).map((label, i) => [label, students.filter((s) => s.state.step === i && s.state.status !== 'Enrolled').length]), ['Enrolled', (await count('Enrolled'))]],
     },
   }
@@ -141,12 +141,12 @@ export async function queueReport(period) {
     stats: [
       { label: 'Queue Tickets', value: tickets.length },
       { label: 'Served', value: served.length },
-      { label: 'Avg Wait', value: fmt(avg(waits), 'min') },
-      { label: 'Avg Service Time', value: fmt(avg(services), 'min') },
+      { label: 'Average Wait', value: fmt(avg(waits), 'min') },
+      { label: 'Average Service Time', value: fmt(avg(services), 'min') },
     ],
     chart: { title: 'Tickets per Office', series: ['Served', 'Skipped / cancelled / waiting'], rows: byOffice },
     table: {
-      columns: ['Office', 'Service', 'Tickets', 'Served', 'Avg wait (min)'],
+      columns: ['Office', 'Service requested', 'Tickets issued', 'Tickets served', 'Average wait (minutes)'],
       rows: [...perService.values()].sort((a, b) => b.total - a.total).map((r) => [r.office, r.service, r.total, r.done, r.waits.length ? avg(r.waits).toFixed(1) : '—']),
     },
   }
@@ -190,7 +190,7 @@ export async function collectionsReport(period) {
       rows: (await Promise.all(methods.map(async (m) => ({ label: m, a: (await sum(tuition.filter((r) => r.method === m))), b: (await sum(docs.filter((r) => r.method === m))) })))),
     },
     table: {
-      columns: ['OR number', 'Student', 'Type', 'Amount', 'Date'],
+      columns: ['Official receipt number', 'Student', 'Payment type', 'Amount paid', 'Date and time paid'],
       rows: all.slice(0, 100).map((r) => [r.orNumber ?? '—', `${r.student} (${r.studentNo})`, r.type === 'Document' ? `Document · ${r.document}` : 'Tuition', peso(r.amount), r.paidAt]),
     },
   }

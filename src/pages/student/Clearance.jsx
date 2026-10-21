@@ -34,7 +34,7 @@ export default function Clearance() {
                 columns={[
                   { key: 'office', label: 'Office', render: (r) => <b>{r.office}</b> },
                   { key: 'requirement', label: 'Requirement' },
-                  { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
+                  { key: 'status', label: 'Clearance status', render: (r) => <Badge status={r.status} /> },
                   { key: 'remarks', label: 'Remarks', render: (r) => r.remarks ?? '—' },
                 ]}
                 rows={d.offices}

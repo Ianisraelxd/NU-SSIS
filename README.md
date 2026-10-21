@@ -49,15 +49,23 @@ All screenshots use the seeded demo data (fictional people).
 | --- | --- |
 | ![Admin home](docs/screenshots/13-admin-home.png) | ![Login attempts](docs/screenshots/14-admin-login-attempts.png) |
 
-| Admin — audit log |
-| --- |
-| ![Audit log](docs/screenshots/15-admin-audit.png) |
+| Admin — audit log | Admin — approvals |
+| --- | --- |
+| ![Audit log](docs/screenshots/15-admin-audit.png) | ![Approvals](docs/screenshots/21-admin-approvals.png) |
 
-### Phone and dark mode
+### Phone, tablet and dark mode
 
 | Phone (390 px) | Dark mode |
 | --- | --- |
 | ![Mobile](docs/screenshots/16-student-home-mobile.png) | ![Dark mode](docs/screenshots/17-student-home-dark.png) |
+
+| Tablet menu (tap outside, ✕, swipe or Esc to close) | Enrollment blocks clashing class times |
+| --- | --- |
+| ![Tablet menu](docs/screenshots/18-tablet-menu.png) | ![Schedule conflict](docs/screenshots/19-enrollment-schedule-conflict.png) |
+
+| Cashier — fee changes are requests |
+| --- |
+| ![Cashier fee requests](docs/screenshots/20-cashier-fee-requests.png) |
 
 ---
 
@@ -168,22 +176,22 @@ Open two browser windows (one private) so you can be a student and a staff membe
 ## Features by portal
 
 ### Student Portal
-Home dashboard · Subjects · Pending Tasks (to-dos built from your real clearance, balance and requests) · Weekly schedule · Academic tracker · Grades per semester · **Online enrollment** with a five-step tracker · **E-Clearance** across six offices · **Documents and Forms** with live fees and request history · Account summary (assessment, payments with receipt numbers) · **Digital Queue** · notifications and announcements · profile and password settings.
+Home dashboard · Subjects · Pending Tasks (to-dos built from your real clearance, balance and requests) · Weekly schedule · Academic tracker · Grades per semester · **Online enrollment** with a five-step tracker (class times shown; subjects that overlap a picked one are blocked) · **E-Clearance** across six offices · **Documents and Forms** with live fees and request history · Account summary (assessment, payments with receipt numbers) · **Digital Queue** · notifications and announcements · profile and password settings.
 
 ### Registrar (RIS)
-Dashboard and announcements · **Queue management** (call next, finish, skip) · **Document requests** (approve → ready → release) · **Enrollment approval** (requires verified records) · Student records (add/edit/verify, one-time temporary passwords) · Subjects and class schedules with room/instructor conflict detection · Grade entry · Library, laboratory, guidance and registrar clearance lines · **Reports** (documents, enrollment, clearance, queue) with CSV and print.
+Dashboard and announcements · **Queue management** (call next, finish, skip) · **Document requests** (approve → ready → release) · **Enrollment approval** (requires verified records; shows the student’s class schedule and cannot approve a clash) · Student records (add/edit/verify, one-time temporary passwords) · Subjects and class schedules with room/instructor conflict detection · Grade entry · Library, laboratory, guidance and registrar clearance lines · **Reports** (documents, enrollment, clearance, queue) with CSV and print.
 
 ### Cashier
-Dashboard · Student balances and fee lines · **Record payments and issue official receipts** (automatic, never-duplicated OR numbers; void with a reason) · **Confirm enrollment payment** (minimum percent paid) and **verify document fees** (exact amount) · Collection reports by period and method · Queue for the Cashier counter.
+Dashboard · Student balances and fee lines · **Record payments and issue official receipts** (automatic, never-duplicated OR numbers — the cashier cannot type one) · **Confirm enrollment payment** (minimum percent paid) and **verify document fees** (exact amount) · **Fee changes and voids are requests** — the cashier asks, the Administrator approves or rejects (a cashier cannot edit their own receipts or fees) · Collection reports by period and method · Queue for the Cashier counter.
 
 ### Department
-Students of your own department only · **Review enrollment**: approve (sends to the Registrar) or return with a reason · Verify academic requirements · **Department clearance** (cannot clear while requirements are unverified) · View grades (every view is written to the audit log) · Department queue.
+Students of your own department only · **Review enrollment**: see the student’s class schedule first, then approve (sends to the Registrar) or return with a reason; a schedule with overlapping classes cannot be approved · Verify academic requirements · **Department clearance** (cannot clear while requirements are unverified) · View grades (every view is written to the audit log) · Department queue.
 
 ### Admin
-User accounts (create, edit, disable, unlock, reset password) · Roles and permissions matrix · Departments and programs · Academic terms · **System settings** (maximum units, minimum payment %, queue minutes, maximum copies) · Announcements · System-wide reports · **Audit log** · **Login attempts** log.
+User accounts (create, edit, disable, unlock, reset password) · **Approvals** (fee changes and receipt voids requested by the Cashier) · Roles and permissions matrix · Departments and programs · Academic terms · **System settings** (maximum units, minimum payment %, queue minutes, maximum copies) · Announcements · System-wide reports · **Audit log** · **Login attempts** log.
 
 ### Everywhere
-Light/dark mode · responsive layout down to phone width · keyboard navigation, visible focus rings and reduced-motion support · a **top loading bar** (with a "slow connection" note) and spinners while the server works · in-app confirmation dialogs · notification bell.
+Light/dark mode · responsive layout down to phone width · a **Back button** and a tablet-friendly menu (tap outside, ✕, swipe or Esc closes it) · page text is **view-only** (not highlighted; typed fields and secrets can still be selected) · specific column and field labels (e.g. "Date and time", "Performed by") · keyboard navigation, visible focus rings and reduced-motion support · a **top loading bar** (with a "slow connection" note) and spinners while the server works · in-app confirmation dialogs · notification bell.
 
 ---
 
@@ -271,7 +279,7 @@ All routes are under `/api`, JSON in and out, `Authorization: Bearer <token>` af
 ## Testing
 
 ```bash
-npm test                  # 64 automated tests on a throw-away embedded PostgreSQL
+npm test                  # 74 automated tests on a throw-away embedded PostgreSQL
 node scripts/perf.mjs     # load test against a running server
 npm run lint
 ```
@@ -353,6 +361,7 @@ The project follows Scrum. Everything is in [`docs/`](docs/README.md):
 | [Requirements traceability](docs/07-requirements-traceability.md) | Requirement → code → test |
 | [System models](docs/08-system-models.md) | DFD, use case, activity, class, ERD |
 | [Test plan](docs/09-test-plan.md) | Test levels, security tests, defect log |
+| [Security checklist](docs/13-security-checklist.md) | What is protected, and the recommended patches in priority order |
 | [Ethical and legal notes](docs/10-ethical-and-legal-notes.md) | Draft for the team |
 | [Deployment](docs/11-deployment.md) | Live URL guide |
 | [Master spec gap analysis](docs/12-master-spec-gap-analysis.md) | Enterprise specification vs. code, roadmap |

@@ -48,7 +48,7 @@ function GradeSheet({ subjectId }) {
             empty="No students are enrolled in this subject."
             columns={[
               { key: 'studentNo', label: 'Student no.', render: (r) => <span className="mono">{r.studentNo}</span> },
-              { key: 'name', label: 'Name', render: (r) => <b>{r.name}</b> },
+              { key: 'name', label: 'Student name', render: (r) => <b>{r.name}</b> },
               ...['prelim', 'midterm', 'finals'].map((f) => ({
                 key: f,
                 label: f[0].toUpperCase() + f.slice(1),
@@ -63,7 +63,7 @@ function GradeSheet({ subjectId }) {
                   />
                 ),
               })),
-              { key: 'point', label: 'Final', align: 'center', render: (r) => (r.final == null ? '—' : `${r.final.toFixed(2)} (${point(r.point)})`) },
+              { key: 'point', label: 'Final grade', align: 'center', render: (r) => (r.final == null ? '—' : `${r.final.toFixed(2)} (${point(r.point)})`) },
               { key: 'remark', label: 'Remarks', render: (r) => <Badge status={r.remark} /> },
             ]}
             rows={d.rows}

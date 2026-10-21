@@ -22,7 +22,7 @@ export default function Account() {
             <Card title="Fee breakdown" flush>
               <Table
                 columns={[
-                  { key: 'name', label: 'Fee' },
+                  { key: 'name', label: 'Fee name' },
                   { key: 'amount', label: 'Amount', align: 'num', render: (r) => peso(r.amount) },
                 ]}
                 rows={d.fees}
@@ -39,11 +39,11 @@ export default function Account() {
             <Card title="Payment history" flush>
               <Table
                 columns={[
-                  { key: 'dueOn', label: 'Date', render: (r) => fmtShort(r.dueOn) },
-                  { key: 'reference', label: 'Official receipt', render: (r) => r.reference ?? '—' },
-                  { key: 'method', label: 'Method', render: (r) => r.method ?? '—' },
-                  { key: 'amount', label: 'Amount', align: 'num', render: (r) => peso(r.amount) },
-                  { key: 'status', label: 'Status', render: (r) => <Badge status={r.status} /> },
+                  { key: 'dueOn', label: 'Date paid or due', render: (r) => fmtShort(r.dueOn) },
+                  { key: 'reference', label: 'Official receipt number', render: (r) => r.reference ?? '—' },
+                  { key: 'method', label: 'Payment method', render: (r) => r.method ?? '—' },
+                  { key: 'amount', label: 'Amount paid', align: 'num', render: (r) => peso(r.amount) },
+                  { key: 'status', label: 'Payment status', render: (r) => <Badge status={r.status} /> },
                 ]}
                 rows={d.payments}
               />
@@ -52,10 +52,10 @@ export default function Account() {
               <Table
                 empty="No document payments yet."
                 columns={[
-                  { key: 'requestNo', label: 'Request', render: (r) => <span className="mono">{r.requestNo}</span> },
+                  { key: 'requestNo', label: 'Request number', render: (r) => <span className="mono">{r.requestNo}</span> },
                   { key: 'document', label: 'Document' },
                   { key: 'orNumber', label: 'Official receipt' },
-                  { key: 'paidAt', label: 'Paid', render: (r) => fmtDateTime(r.paidAt) },
+                  { key: 'paidAt', label: 'Date and time paid', render: (r) => fmtDateTime(r.paidAt) },
                   { key: 'amount', label: 'Amount', align: 'num', render: (r) => peso(r.amount) },
                 ]}
                 rows={d.documentPayments}

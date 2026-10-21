@@ -18,6 +18,8 @@ import {
   startOfDayIso,
   tempPassword,
   termLabel,
+  findConflicts,
+  scheduleFor,
 } from '../util.js'
 import { REQUEST_SQL, moveRequest, withNo } from '../requests.js'
 import { clearanceReport, documentsReport, enrollmentReport, queueReport } from '../reports.js'
@@ -130,13 +132,14 @@ router.get('/enrollment', async (req, res) => {
     )
     .all(...[(await currentTerm()).id, ...(status === 'all' ? [] : [status])])
   const items = db.prepare(
-    `SELECT s.code, s.description, s.units FROM enrollment_items i JOIN subjects s ON s.id = i.subject_id WHERE i.request_id = ? ORDER BY s.code`,
+    `SELECT s.id, s.code, s.description, s.units FROM enrollment_items i JOIN subjects s ON s.id = i.subject_id WHERE i.request_id = ? ORDER BY s.code`,
   )
   res.json({
     term: termLabel((await currentTerm())),
     requests: (await Promise.all(rows.map(async (r) => {
       const subjects = await items.all(r.id)
-      return { ...r, verified: !!r.verifiedAt, subjects, units: subjects.reduce((n, s) => n + s.units, 0) }
+      const schedule = await scheduleFor(subjects.map((s) => s.id))
+      return { ...r, verified: !!r.verifiedAt, subjects, units: subjects.reduce((n, s) => n + s.units, 0), schedule, conflicts: findConflicts(schedule).map((c) => c.text) }
     }))),
   })
 })
@@ -151,6 +154,8 @@ router.patch('/enrollment/:id', async (req, res) => {
 
   if (decision === 'approve') {
     if (!student.verified_at) throw new HttpError(409, 'Verify the student’s academic information in Student Records before approving.')
+    const clashes = findConflicts(await scheduleFor((await db.prepare('SELECT subject_id FROM enrollment_items WHERE request_id = ?').all(request.id)).map((r) => r.subject_id)))
+    if (clashes.length) throw new HttpError(409, `This schedule has a conflict, so it cannot be approved: ${clashes.map((c) => c.text).join('; ')}. Return it to the student to fix.`)
     await transaction(async () => {
       await db.prepare("UPDATE enrollment_requests SET status = 'Approved', remarks = NULL, registrar_reviewed_by = ?, registrar_reviewed_at = ? WHERE id = ?").run(req.user.id, now, request.id)
       const add = db.prepare('INSERT INTO student_subjects (student_id, subject_id, term_id) VALUES (?,?,?) ON CONFLICT DO NOTHING')

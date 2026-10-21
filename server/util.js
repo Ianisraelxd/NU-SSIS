@@ -1,4 +1,4 @@
-import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto'
+import { scryptSync, randomBytes, timingSafeEqual, createHash } from 'node:crypto'
 import { db, inTransaction } from './db.js'
 import { publish } from './realtime.js'
 
@@ -8,10 +8,30 @@ export function hashPassword(password) {
 }
 
 export function verifyPassword(password, stored) {
-  const [salt, hash] = stored.split(':')
+  const [salt, hash] = String(stored).split(':')
+  if (!salt || !hash) return false
   const given = scryptSync(password, salt, 64)
   const expected = Buffer.from(hash, 'hex')
   return given.length === expected.length && timingSafeEqual(given, expected)
+}
+
+// Session tokens are only ever stored as a SHA-256 hash, so a leaked database cannot be used to sign in.
+export const hashToken = (token) => createHash('sha256').update(String(token)).digest('hex')
+
+// A real hash to compare against when the account does not exist, so the response time does not
+// reveal whether an ID is registered.
+export const DUMMY_HASH = hashPassword('not-a-real-password')
+
+const COMMON_PASSWORDS = new Set(['password', 'password1', 'password123', '12345678', '123456789', 'qwertyuiop', 'iloveyou', 'admin123', 'welcome123', 'letmein123'])
+// Returns a message when the password is too weak, otherwise null.
+export function passwordProblem(password, loginId = '') {
+  const p = String(password)
+  if (p.length < 8) return 'New password must be at least 8 characters.'
+  if (p.length > 128) return 'New password must be 128 characters or fewer.'
+  if (COMMON_PASSWORDS.has(p.toLowerCase())) return 'That password is too common. Choose something harder to guess.'
+  if (loginId && p.toLowerCase().includes(String(loginId).toLowerCase())) return 'The password must not contain your own ID.'
+  if (new Set(p).size === 1) return 'Choose a password that is not one repeated character.'
+  return null
 }
 
 export class HttpError extends Error {
@@ -247,6 +267,47 @@ export const QUEUE_SERVICES = {
   Registrar: ['Enrollment', 'Clearance', 'Grade Viewing', 'Document Request'],
   Cashier: ['Tuition Payment', 'Document Payment', 'Other Payment'],
   Department: ['Enrollment Review', 'Clearance', 'Academic Advising'],
+}
+
+// ---- class schedule conflicts -----------------------------------------------------------------------
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+export const clock = (min) => {
+  const h = Math.floor(min / 60)
+  return `${((h + 11) % 12) + 1}:${String(min % 60).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`
+}
+
+// Every weekly class meeting of the given subjects, in day and time order.
+export async function scheduleFor(subjectIds) {
+  if (!subjectIds.length) return []
+  return await db
+    .prepare(
+      `SELECT m.subject_id AS subjectId, s.code, s.description, COALESCE(u.name, m.instructor) AS instructor, m.day,
+              m.start_min AS startMin, m.end_min AS endMin, m.room
+       FROM meetings m JOIN subjects s ON s.id = m.subject_id LEFT JOIN users u ON u.id = m.teacher_id
+       WHERE m.subject_id IN (${subjectIds.map(() => '?').join(',')}) ORDER BY m.day, m.start_min, s.code`,
+    )
+    .all(...subjectIds)
+}
+
+// Two meetings of different subjects on the same day whose times overlap. A student cannot attend both,
+// so such a schedule is never offered or approved.
+export function findConflicts(meetings) {
+  const found = []
+  for (let i = 0; i < meetings.length; i++) {
+    for (let j = i + 1; j < meetings.length; j++) {
+      const a = meetings[i]
+      const b = meetings[j]
+      if (a.subjectId !== b.subjectId && a.day === b.day && a.startMin < b.endMin && b.startMin < a.endMin) {
+        found.push({
+          a: a.code,
+          b: b.code,
+          day: DAY_NAMES[a.day - 1],
+          text: `${a.code} (${clock(a.startMin)}–${clock(a.endMin)}) and ${b.code} (${clock(b.startMin)}–${clock(b.endMin)}) are both on ${DAY_NAMES[a.day - 1]}`,
+        })
+      }
+    }
+  }
+  return found
 }
 
 // ---- chat helpers -----------------------------------------------------------

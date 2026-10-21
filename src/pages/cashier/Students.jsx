@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import ReceiptModal from '../../components/ReceiptModal.jsx'
-import { Async, Badge, Card, Field, Modal, PageHead, Stat, Table, useConfirm, useToast } from '../../components/ui.jsx'
+import { Async, Badge, Card, Field, Modal, PageHead, Stat, Table, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { burst } from '../../lib/fx.js'
 import { fmtDateTime, fmtShort, peso } from '../../lib/format.js'
@@ -8,40 +8,57 @@ import { useApi, useDebounced } from '../../lib/hooks.js'
 
 const METHODS = ['Cash', 'GCash', 'Bank Transfer', 'Check']
 
-function VoidDialog({ payment, onClose, onDone }) {
+// The Cashier cannot change what a student owes or cancel a receipt. They send a request with a reason; an
+// Administrator decides. One dialog serves both kinds of request.
+function RequestDialog({ title, intro, confirmLabel, fields, path, body, onClose, onDone }) {
   const toast = useToast()
-  const [reason, setReason] = useState('')
+  const [values, setValues] = useState(fields.reduce((o, f) => ({ ...o, [f.key]: f.value ?? '' }), {}))
   const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const send = async () => {
+    setBusy(true)
     try {
-      await api.post(`/cashier/payments/${payment.id}/void`, { reason })
-      toast(`${payment.reference} voided.`)
+      await api.post(path, { ...body, ...values })
+      toast('Request sent to the Administrator for approval.')
       onDone()
     } catch (e) {
       setError(e.message)
+      setBusy(false)
     }
   }
   return (
     <Modal
-      title={`Void ${payment.reference}?`}
+      title={title}
       onClose={onClose}
       footer={
         <>
           <button className="btn secondary" onClick={onClose}>
-            Keep it
+            Cancel
           </button>
-          <button className="btn danger-solid" onClick={send}>
-            Void receipt
+          <button className="btn" disabled={busy} onClick={send}>
+            {confirmLabel}
           </button>
         </>
       }
     >
-      <p style={{ marginBottom: 12 }}>
-        The {peso(payment.amount)} payment will be cancelled and the student’s balance goes back up.
+      <p style={{ marginBottom: 12 }}>{intro}</p>
+      <p className="muted" style={{ marginBottom: 14, fontSize: 13 }}>
+        Nothing changes until an Administrator approves the request.
       </p>
-      <Field label="Reason" htmlFor="void-reason" error={error}>
-        <input id="void-reason" className="input" value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} />
-      </Field>
+      {fields.map((f) => (
+        <Field key={f.key} label={f.label} htmlFor={`rq-${f.key}`} error={f.key === 'reason' ? error : undefined}>
+          <input
+            id={`rq-${f.key}`}
+            className="input"
+            type={f.type ?? 'text'}
+            min={f.type === 'number' ? 1 : undefined}
+            step={f.type === 'number' ? '0.01' : undefined}
+            maxLength={f.key === 'reason' ? 300 : 60}
+            value={values[f.key]}
+            onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
+          />
+        </Field>
+      ))}
     </Modal>
   )
 }
@@ -49,12 +66,9 @@ function VoidDialog({ payment, onClose, onDone }) {
 function Manage({ id, onClose, onChanged }) {
   const state = useApi(`/cashier/students/${id}`)
   const toast = useToast()
-  const confirm = useConfirm()
-  const [pay, setPay] = useState({ amount: '', method: 'Cash', orNumber: '' })
-  const [fee, setFee] = useState({ name: '', amount: '' })
-  const [editFee, setEditFee] = useState(null)
+  const [pay, setPay] = useState({ amount: '', method: 'Cash' })
   const [receipt, setReceipt] = useState(null)
-  const [voiding, setVoiding] = useState(null)
+  const [dialog, setDialog] = useState(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = () => {
@@ -79,182 +93,233 @@ function Manage({ id, onClose, onChanged }) {
 
   const record = async (e, d) => {
     e.preventDefault()
-    const res = await run(() => api.post(`/cashier/students/${id}/payments`, { amount: pay.amount || d.balance, method: pay.method, orNumber: pay.orNumber }), { text: 'Payment recorded.', confetti: true }, e)
+    const res = await run(() => api.post(`/cashier/students/${id}/payments`, { amount: pay.amount || d.balance, method: pay.method }), { text: 'Payment recorded.', confetti: true }, e)
     if (res) {
-      setPay({ amount: '', method: 'Cash', orNumber: '' })
+      setPay({ amount: '', method: 'Cash' })
       const fresh = await api.get(`/cashier/students/${id}`)
       const paid = fresh.payments.find((p) => p.reference === res.orNumber)
       if (paid) setReceipt({ kind: 'payment', id: paid.id })
     }
   }
 
-  const removeFee = async (f) => {
-    const ok = await confirm({ title: `Remove “${f.name}”?`, message: `${peso(f.amount)} will be taken off this student’s assessment.`, confirmLabel: 'Remove fee' })
-    if (ok) run(() => api.delete(`/cashier/fees/${f.id}`), 'Fee removed.')
+  const done = () => {
+    setDialog(null)
+    refresh()
   }
 
   return (
     <Modal title={state.data ? `${state.data.student.name} · ${state.data.student.studentNo}` : 'Student account'} wide onClose={onClose}>
       <Async state={state}>
-        {(d) => (
-          <div className="stack" style={{ gap: 24 }}>
-            <div className="grid stats">
-              <Stat label="Assessment" value={peso(d.assessed)} />
-              <Stat label="Paid" value={peso(d.paid)} tone="ok" hint={`${d.percent}% of assessment`} />
-              <Stat label="Balance" value={peso(d.balance)} tone={d.balance ? 'warn' : 'ok'} />
-            </div>
+        {(d) => {
+          const waiting = (kind, targetId) => d.changeRequests.some((c) => c.status === 'Pending' && c.kind.startsWith(kind) && c.targetId === targetId)
+          return (
+            <div className="stack" style={{ gap: 24 }}>
+              <div className="grid stats">
+                <Stat label="Assessment" value={peso(d.assessed)} />
+                <Stat label="Paid" value={peso(d.paid)} tone="ok" hint={`${d.percent}% of assessment`} />
+                <Stat label="Balance" value={peso(d.balance)} tone={d.balance ? 'warn' : 'ok'} />
+              </div>
 
-            <Card title="Enrollment payment" sub={`Status: ${d.enrollment.status} · next step: ${d.enrollment.stepName}`}>
-              {d.enrollment.confirmed ? (
-                <Badge status="Enrolled">Payment confirmed — officially enrolled</Badge>
-              ) : d.enrollment.awaitingPayment ? (
-                <div className="toolbar">
-                  <span>
-                    Paid <b>{d.percent}%</b> — at least <b>{d.enrollment.minPercent}%</b> is needed.
-                  </span>
-                  <button className="btn" disabled={busy || d.percent < d.enrollment.minPercent} onClick={(e) => run(() => api.post(`/cashier/students/${id}/enrollment/confirm`), { text: 'Enrollment payment confirmed.', confetti: true }, e)}>
-                    Confirm enrollment payment
-                  </button>
-                </div>
-              ) : (
-                <p className="muted">Not ready for payment confirmation — the Registrar has not approved this student’s enrollment yet.</p>
-              )}
-            </Card>
-
-            <Card title="Fees" sub="Add or adjust what this student is assessed" flush>
-              <Table
-                empty="No fees assessed."
-                columns={[
-                  { key: 'name', label: 'Fee' },
-                  { key: 'amount', label: 'Amount', align: 'num', render: (f) => peso(f.amount) },
-                  {
-                    key: 'x',
-                    label: '',
-                    render: (f) => (
-                      <div className="actions">
-                        <button className="btn small secondary" onClick={() => setEditFee({ id: f.id, name: f.name, amount: f.amount })}>
-                          Edit
-                        </button>
-                        <button className="btn small danger" onClick={() => removeFee(f)}>
-                          Remove
-                        </button>
-                      </div>
-                    ),
-                  },
-                ]}
-                rows={d.fees}
-              />
-              <form
-                className="toolbar"
-                style={{ padding: 16 }}
-                onSubmit={async (e) => {
-                  e.preventDefault()
-                  const res = await run(() => (editFee ? api.put(`/cashier/fees/${editFee.id}`, editFee) : api.post(`/cashier/students/${id}/fees`, fee)), editFee ? 'Fee updated.' : 'Fee added.')
-                  if (res !== undefined) {
-                    setEditFee(null)
-                    setFee({ name: '', amount: '' })
-                  }
-                }}
-              >
-                <input className="input grow" aria-label="Fee name" placeholder="Fee name (e.g. ID replacement)" value={editFee ? editFee.name : fee.name} onChange={(e) => (editFee ? setEditFee({ ...editFee, name: e.target.value }) : setFee({ ...fee, name: e.target.value }))} />
-                <input className="input" type="number" min="1" step="0.01" aria-label="Fee amount" placeholder="Amount ₱" value={editFee ? editFee.amount : fee.amount} onChange={(e) => (editFee ? setEditFee({ ...editFee, amount: e.target.value }) : setFee({ ...fee, amount: e.target.value }))} style={{ width: 150 }} />
-                <button className="btn small">{editFee ? 'Save fee' : 'Add fee'}</button>
-                {editFee && (
-                  <button type="button" className="btn small secondary" onClick={() => setEditFee(null)}>
-                    Cancel
-                  </button>
+              <Card title="Enrollment payment" sub={`Status: ${d.enrollment.status} · next step: ${d.enrollment.stepName}`}>
+                {d.enrollment.confirmed ? (
+                  <Badge status="Enrolled">Payment confirmed — officially enrolled</Badge>
+                ) : d.enrollment.awaitingPayment ? (
+                  <div className="toolbar">
+                    <span>
+                      Paid <b>{d.percent}%</b> — at least <b>{d.enrollment.minPercent}%</b> is needed.
+                    </span>
+                    <button className="btn" disabled={busy || d.percent < d.enrollment.minPercent} onClick={(e) => run(() => api.post(`/cashier/students/${id}/enrollment/confirm`), { text: 'Enrollment payment confirmed.', confetti: true }, e)}>
+                      Confirm enrollment payment
+                    </button>
+                  </div>
+                ) : (
+                  <p className="muted">Not ready for payment confirmation — the Registrar has not approved this student’s enrollment yet.</p>
                 )}
-              </form>
-            </Card>
+              </Card>
 
-            <Card title="Record a payment" sub={d.balance > 0 ? `The student owes ${peso(d.balance)}` : 'Nothing is owed'}>
-              <form onSubmit={(e) => record(e, d)} noValidate>
-                <div className="row">
-                  <Field label="Amount received (₱)" htmlFor="pay-amt">
-                    <input id="pay-amt" className="input" type="number" min="1" step="0.01" placeholder={String(d.balance)} value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} />
-                  </Field>
-                  <Field label="Method" htmlFor="pay-method">
-                    <select id="pay-method" className="select" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
-                      {METHODS.map((m) => (
-                        <option key={m}>{m}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="OR number" htmlFor="pay-or" help="Leave blank to generate the next one">
-                    <input id="pay-or" className="input" value={pay.orNumber} onChange={(e) => setPay({ ...pay, orNumber: e.target.value })} />
-                  </Field>
-                </div>
-                <button className="btn" disabled={busy || d.balance <= 0}>
-                  Record payment & issue receipt
-                </button>
-              </form>
-            </Card>
-
-            <Card title="Payment history" flush>
-              <Table
-                empty="No payments yet."
-                columns={[
-                  { key: 'paidAt', label: 'Date', render: (p) => (p.paidAt ? fmtDateTime(p.paidAt) : `due ${fmtShort(p.dueOn)}`) },
-                  { key: 'reference', label: 'OR number', render: (p) => p.reference ?? '—' },
-                  { key: 'method', label: 'Method', render: (p) => p.method ?? '—' },
-                  { key: 'amount', label: 'Amount', align: 'num', render: (p) => peso(p.amount) },
-                  { key: 'status', label: 'Status', render: (p) => <Badge status={p.status} /> },
-                  {
-                    key: 'x',
-                    label: '',
-                    render: (p) =>
-                      p.status === 'Paid' ? (
-                        <div className="actions">
-                          <button className="btn small secondary" onClick={() => setReceipt({ kind: 'payment', id: p.id })}>
-                            Receipt
-                          </button>
-                          <button className="btn small danger" onClick={() => setVoiding(p)}>
-                            Void
-                          </button>
-                        </div>
-                      ) : p.status === 'Void' ? (
-                        <span className="muted">{p.voidReason}</span>
-                      ) : null,
-                  },
-                ]}
-                rows={d.payments}
-              />
-            </Card>
-
-            {d.documentPayments.length > 0 && (
-              <Card title="Document fee payments" flush>
+              <Card title="Fees assessed" sub="Fee changes need the Administrator’s approval" flush>
                 <Table
+                  empty="No fees assessed."
                   columns={[
-                    { key: 'requestNo', label: 'Request' },
-                    { key: 'document', label: 'Document' },
-                    { key: 'orNumber', label: 'OR number' },
-                    { key: 'amount', label: 'Amount', align: 'num', render: (p) => peso(p.amount) },
+                    { key: 'name', label: 'Fee name' },
+                    { key: 'amount', label: 'Amount', align: 'num', render: (f) => peso(f.amount) },
                     {
                       key: 'x',
-                      label: '',
-                      render: (p) => (
-                        <button className="btn small secondary" onClick={() => setReceipt({ kind: 'request', id: p.id })}>
-                          Receipt
-                        </button>
-                      ),
+                      label: 'Request a change',
+                      render: (f) =>
+                        waiting('fee', f.id) ? (
+                          <Badge status="Pending">Waiting for approval</Badge>
+                        ) : (
+                          <div className="actions">
+                            <button className="btn small secondary" onClick={() => setDialog({ type: 'fee-change', fee: f })}>
+                              Ask to change
+                            </button>
+                            <button className="btn small danger" onClick={() => setDialog({ type: 'fee-remove', fee: f })}>
+                              Ask to remove
+                            </button>
+                          </div>
+                        ),
                     },
                   ]}
-                  rows={d.documentPayments}
+                  rows={d.fees}
+                />
+                <div style={{ padding: 16 }}>
+                  <button className="btn small secondary" onClick={() => setDialog({ type: 'fee-add' })}>
+                    Ask to add a fee
+                  </button>
+                </div>
+              </Card>
+
+              <Card title="Record a payment" sub={d.balance > 0 ? `The student owes ${peso(d.balance)}` : 'Nothing is owed'}>
+                <form onSubmit={(e) => record(e, d)} noValidate>
+                  <div className="row">
+                    <Field label="Amount received (₱)" htmlFor="pay-amt">
+                      <input id="pay-amt" className="input" type="number" min="1" step="0.01" placeholder={String(d.balance)} value={pay.amount} onChange={(e) => setPay({ ...pay, amount: e.target.value })} />
+                    </Field>
+                    <Field label="Payment method" htmlFor="pay-method" help="The official receipt number is generated by the system">
+                      <select id="pay-method" className="select" value={pay.method} onChange={(e) => setPay({ ...pay, method: e.target.value })}>
+                        {METHODS.map((m) => (
+                          <option key={m}>{m}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  <button className="btn" disabled={busy || d.balance <= 0}>
+                    Record payment & issue receipt
+                  </button>
+                </form>
+              </Card>
+
+              <Card title="Payment history" sub="A receipt cannot be edited. To cancel one, ask the Administrator to void it." flush>
+                <Table
+                  empty="No payments yet."
+                  columns={[
+                    { key: 'paidAt', label: 'Date and time paid', render: (p) => (p.paidAt ? fmtDateTime(p.paidAt) : `due ${fmtShort(p.dueOn)}`) },
+                    { key: 'reference', label: 'Official receipt no. and cashier', render: (p) => (p.reference ? <span><b>{p.reference}</b><br /><span className="muted">received by {p.recordedBy ?? '—'}</span></span> : '—') },
+                    { key: 'method', label: 'Payment method', render: (p) => p.method ?? '—' },
+                    { key: 'amount', label: 'Amount', align: 'num', render: (p) => peso(p.amount) },
+                    { key: 'status', label: 'Status', render: (p) => <Badge status={p.status} /> },
+                    {
+                      key: 'x',
+                      label: 'Actions',
+                      render: (p) =>
+                        p.status === 'Paid' ? (
+                          <div className="actions">
+                            <button className="btn small secondary" onClick={() => setReceipt({ kind: 'payment', id: p.id })}>
+                              View receipt
+                            </button>
+                            {waiting('payment', p.id) ? (
+                              <Badge status="Pending">Void requested</Badge>
+                            ) : (
+                              <button className="btn small danger" onClick={() => setDialog({ type: 'void', payment: p })}>
+                                Ask to void
+                              </button>
+                            )}
+                          </div>
+                        ) : p.status === 'Void' ? (
+                          <span className="muted">Voided: {p.voidReason}</span>
+                        ) : null,
+                    },
+                  ]}
+                  rows={d.payments}
                 />
               </Card>
-            )}
-          </div>
-        )}
+
+              {d.documentPayments.length > 0 && (
+                <Card title="Document fee payments" flush>
+                  <Table
+                    columns={[
+                      { key: 'requestNo', label: 'Request no.' },
+                      { key: 'document', label: 'Document' },
+                      { key: 'orNumber', label: 'Official receipt no.' },
+                      { key: 'amount', label: 'Amount', align: 'num', render: (p) => peso(p.amount) },
+                      {
+                        key: 'x',
+                        label: 'Actions',
+                        render: (p) => (
+                          <button className="btn small secondary" onClick={() => setReceipt({ kind: 'request', id: p.id })}>
+                            View receipt
+                          </button>
+                        ),
+                      },
+                    ]}
+                    rows={d.documentPayments}
+                  />
+                </Card>
+              )}
+
+              {d.changeRequests.length > 0 && (
+                <Card title="Requests sent to the Administrator" sub="For this student" flush>
+                  <Table
+                    columns={[
+                      { key: 'requestedAt', label: 'Date and time requested', render: (c) => fmtDateTime(c.requestedAt) },
+                      { key: 'summary', label: 'What was asked' },
+                      { key: 'reason', label: 'Reason given' },
+                      { key: 'status', label: 'Decision', render: (c) => <Badge status={c.status} /> },
+                      { key: 'decisionNote', label: 'Administrator’s note', render: (c) => c.decisionNote ?? '—' },
+                    ]}
+                    rows={d.changeRequests}
+                  />
+                </Card>
+              )}
+            </div>
+          )
+        }}
       </Async>
       {receipt && <ReceiptModal kind={receipt.kind} id={receipt.id} onClose={() => setReceipt(null)} />}
-      {voiding && (
-        <VoidDialog
-          payment={voiding}
-          onClose={() => setVoiding(null)}
-          onDone={() => {
-            setVoiding(null)
-            refresh()
-          }}
+      {dialog?.type === 'void' && (
+        <RequestDialog
+          title={`Ask to void ${dialog.payment.reference}`}
+          intro={`If approved, the ${peso(dialog.payment.amount)} payment is cancelled and the student’s balance goes back up.`}
+          confirmLabel="Send void request"
+          path={`/cashier/payments/${dialog.payment.id}/void-request`}
+          fields={[{ key: 'reason', label: 'Why should this receipt be voided?' }]}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
+      )}
+      {dialog?.type === 'fee-add' && (
+        <RequestDialog
+          title="Ask to add a fee"
+          intro="Describe the fee that should be added to this student’s assessment."
+          confirmLabel="Send request"
+          path={`/cashier/students/${id}/fee-requests`}
+          body={{ action: 'add' }}
+          fields={[
+            { key: 'name', label: 'Fee name (for example ID replacement)' },
+            { key: 'amount', label: 'Amount (₱)', type: 'number' },
+            { key: 'reason', label: 'Why is this fee needed?' },
+          ]}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
+      )}
+      {dialog?.type === 'fee-change' && (
+        <RequestDialog
+          title={`Ask to change “${dialog.fee.name}”`}
+          intro={`Currently ${peso(dialog.fee.amount)}. Enter the corrected name and amount.`}
+          confirmLabel="Send request"
+          path={`/cashier/students/${id}/fee-requests`}
+          body={{ action: 'update', feeId: dialog.fee.id }}
+          fields={[
+            { key: 'name', label: 'Fee name', value: dialog.fee.name },
+            { key: 'amount', label: 'New amount (₱)', type: 'number', value: dialog.fee.amount },
+            { key: 'reason', label: 'Why does it need to change?' },
+          ]}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
+      )}
+      {dialog?.type === 'fee-remove' && (
+        <RequestDialog
+          title={`Ask to remove “${dialog.fee.name}”`}
+          intro={`If approved, ${peso(dialog.fee.amount)} is taken off this student’s assessment.`}
+          confirmLabel="Send request"
+          path={`/cashier/students/${id}/fee-requests`}
+          body={{ action: 'delete', feeId: dialog.fee.id }}
+          fields={[{ key: 'reason', label: 'Why should this fee be removed?' }]}
+          onClose={() => setDialog(null)}
+          onDone={done}
         />
       )}
     </Modal>
@@ -270,7 +335,7 @@ export default function CashierStudents() {
 
   return (
     <>
-      <PageHead title="Students & Balances" subtitle="View assessments, manage fees, record payments and confirm enrollment payment." />
+      <PageHead title="Students & Balances" subtitle="View assessments, record payments and confirm enrollment payment. Fee changes and receipt voids go to the Administrator for approval." />
       <div className="stack">
         <div className="toolbar" role="search">
           <label className="sr-only" htmlFor="cs-q">
@@ -292,18 +357,18 @@ export default function CashierStudents() {
               <Table
                 empty="No students match."
                 columns={[
-                  { key: 'studentNo', label: 'Student no.', render: (s) => <span className="mono">{s.studentNo}</span> },
-                  { key: 'name', label: 'Name', render: (s) => <b>{s.name}</b> },
-                  { key: 'assessed', label: 'Assessed', align: 'num', render: (s) => peso(s.assessed) },
-                  { key: 'paid', label: 'Paid', align: 'num', render: (s) => `${peso(s.paid)} (${s.percent}%)` },
-                  { key: 'balance', label: 'Balance', align: 'num', render: (s) => peso(s.balance) },
-                  { key: 'enrollmentStatus', label: 'Enrollment', render: (s) => (s.enrollmentStep === 3 ? <Badge status="Pending">Confirm payment</Badge> : <Badge status={s.enrollmentStatus} />) },
+                  { key: 'studentNo', label: 'Student number', render: (s) => <span className="mono">{s.studentNo}</span> },
+                  { key: 'name', label: 'Student name', render: (s) => <b>{s.name}</b> },
+                  { key: 'assessed', label: 'Total assessed', align: 'num', render: (s) => peso(s.assessed) },
+                  { key: 'paid', label: 'Amount paid', align: 'num', render: (s) => `${peso(s.paid)} (${s.percent}%)` },
+                  { key: 'balance', label: 'Remaining balance', align: 'num', render: (s) => peso(s.balance) },
+                  { key: 'enrollmentStatus', label: 'Enrollment status', render: (s) => (s.enrollmentStep === 3 ? <Badge status="Pending">Confirm payment</Badge> : <Badge status={s.enrollmentStatus} />) },
                   {
                     key: 'x',
-                    label: '',
+                    label: 'Account',
                     render: (s) => (
                       <button className="btn small secondary" onClick={() => setOpen(s.id)}>
-                        Manage
+                        Open account
                       </button>
                     ),
                   },

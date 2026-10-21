@@ -35,6 +35,14 @@ async function login(role, loginId, password = PASSWORDS[role]) {
 }
 
 const tokens = {}
+
+// two subjects clash when they meet on the same day at overlapping times
+const clashes = (a, b) => a.id !== b.id && a.meetings.some((x) => b.meetings.some((y) => x.day === y.day && x.startMin < y.endMin && y.startMin < x.endMin))
+const pickWithoutClashes = (subjects, n) => {
+  const chosen = []
+  for (const s of subjects) if (chosen.length < n && !chosen.some((c) => clashes(c, s))) chosen.push(s)
+  return chosen
+}
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'ssis-test-'))
   server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL ?? '', DB_DIR: join(dir, 'pg'), API_PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] })
@@ -155,7 +163,8 @@ describe('enrollment: student → department → registrar → cashier', () => {
     assert.equal(r.data.status, 'Not Started')
     assert.equal(r.data.step, 0)
     assert.ok(r.data.available.length >= 5)
-    subjectIds = r.data.available.slice(0, 5).map((s) => s.id)
+    subjectIds = pickWithoutClashes(r.data.available, 5).map((s) => s.id)
+    assert.equal(subjectIds.length, 5)
   })
 
   test('picking too many units or an unknown subject is rejected', async () => {
@@ -330,39 +339,77 @@ describe('digital queue', () => {
 
 describe('cashier: fees, payments and receipts', () => {
   let juan
+  const balanceOf = async () => (await get(`/cashier/students/${juan.id}`, tokens.cashier)).data.balance
+  const pending = async (text) => (await get('/admin/approvals', tokens.admin)).data.approvals.find((a) => a.summary.includes(text))
+
   test('balance matches the assessment', async () => {
     juan = (await get('/cashier/students?q=26001001', tokens.cashier)).data.students[0]
     assert.equal(juan.assessed, 26000)
     assert.equal(juan.balance, 6000)
   })
 
-  test('adding a fee raises the balance and keeps one Due line equal to it', async () => {
-    assert.equal((await post(`/cashier/students/${juan.id}/fees`, tokens.cashier, { name: 'ID replacement', amount: 150 })).status, 201)
+  test('the cashier cannot change fees or cancel receipts directly', async () => {
+    assert.equal((await post(`/cashier/students/${juan.id}/fees`, tokens.cashier, { name: 'Free money', amount: 1 })).status, 404)
+    assert.equal((await put('/cashier/fees/1', tokens.cashier, { name: 'x', amount: 1 })).status, 404)
+    assert.equal((await del('/cashier/fees/1', tokens.cashier)).status, 404)
+    assert.equal((await post('/cashier/payments/1/void', tokens.cashier, { reason: 'because' })).status, 404)
+  })
+
+  test('a fee change is only a request until an Administrator approves it', async () => {
+    const noReason = await post(`/cashier/students/${juan.id}/fee-requests`, tokens.cashier, { action: 'add', name: 'ID replacement', amount: 150, reason: '' })
+    assert.equal(noReason.status, 400)
+    const asked = await post(`/cashier/students/${juan.id}/fee-requests`, tokens.cashier, { action: 'add', name: 'ID replacement', amount: 150, reason: 'Lost ID card' })
+    assert.equal(asked.status, 201)
+    assert.equal(await balanceOf(), 6000, 'nothing changes before approval')
+    const request = await pending('ID replacement')
+    assert.ok(request, 'the Administrator sees the request')
+    assert.equal(request.status, 'Pending')
+    assert.equal((await post(`/admin/approvals/${request.id}/decide`, tokens.cashier, { decision: 'approve' })).status, 403, 'a cashier cannot approve')
+    assert.equal((await post(`/admin/approvals/${request.id}/decide`, tokens.admin, { decision: 'approve' })).status, 200)
     const d = (await get(`/cashier/students/${juan.id}`, tokens.cashier)).data
     assert.equal(d.balance, 6150)
     const due = d.payments.filter((p) => p.status === 'Due')
     assert.equal(due.length, 1)
     assert.equal(due[0].amount, 6150)
+    assert.equal((await post(`/admin/approvals/${request.id}/decide`, tokens.admin, { decision: 'approve' })).status, 409, 'decided only once')
   })
 
-  test('paying more than owed, or zero, is rejected; an exact payment clears the balance', async () => {
+  test('rejecting needs a reason and changes nothing', async () => {
+    await post(`/cashier/students/${juan.id}/fee-requests`, tokens.cashier, { action: 'add', name: 'Late fee', amount: 500, reason: 'Paid late last term' })
+    const request = await pending('Late fee')
+    assert.equal((await post(`/admin/approvals/${request.id}/decide`, tokens.admin, { decision: 'reject', note: '' })).status, 400)
+    assert.equal((await post(`/admin/approvals/${request.id}/decide`, tokens.admin, { decision: 'reject', note: 'Not allowed this term' })).status, 200)
+    assert.equal(await balanceOf(), 6150)
+    const mine = (await get('/cashier/change-requests', tokens.cashier)).data.approvals.find((a) => a.id === request.id)
+    assert.equal(mine.status, 'Rejected')
+    assert.equal(mine.decisionNote, 'Not allowed this term')
+  })
+
+  test('paying more than owed, or zero, is rejected; receipt numbers are always generated', async () => {
     assert.equal((await post(`/cashier/students/${juan.id}/payments`, tokens.cashier, { amount: 999999 })).status, 400)
     assert.equal((await post(`/cashier/students/${juan.id}/payments`, tokens.cashier, { amount: 0 })).status, 400)
-    const ok = await post(`/cashier/students/${juan.id}/payments`, tokens.cashier, { amount: 6150, method: 'GCash' })
+    const ok = await post(`/cashier/students/${juan.id}/payments`, tokens.cashier, { amount: 6150, method: 'GCash', orNumber: 'OR-1' })
     assert.equal(ok.status, 201)
-    assert.equal((await get(`/cashier/students/${juan.id}`, tokens.cashier)).data.balance, 0)
-    const dup = await post(`/cashier/students/${juan.id}/payments`, tokens.cashier, { amount: 1, orNumber: ok.data.orNumber })
-    assert.ok([400, 409].includes(dup.status)) // balance is zero, so it is refused either way
+    assert.match(ok.data.orNumber, /^OR-\d+$/)
+    assert.notEqual(ok.data.orNumber, 'OR-1', 'a typed receipt number is ignored')
+    assert.equal(await balanceOf(), 0)
+    assert.ok([400, 409].includes((await post(`/cashier/students/${juan.id}/payments`, tokens.cashier, { amount: 1 })).status)) // nothing is owed
   })
 
-  test('the receipt can be read, and voiding it restores the balance', async () => {
+  test('voiding a receipt also needs approval, and then restores the balance', async () => {
     const d = (await get(`/cashier/students/${juan.id}`, tokens.cashier)).data
     const paid = d.payments.find((p) => p.status === 'Paid' && p.amount === 6150)
     const receipt = await get(`/cashier/receipts/payment/${paid.id}`, tokens.cashier)
     assert.equal(receipt.data.orNumber, paid.reference)
-    assert.equal((await post(`/cashier/payments/${paid.id}/void`, tokens.cashier, { reason: '' })).status, 400)
-    assert.equal((await post(`/cashier/payments/${paid.id}/void`, tokens.cashier, { reason: 'Wrong student' })).status, 200)
-    assert.equal((await get(`/cashier/students/${juan.id}`, tokens.cashier)).data.balance, 6150)
+    assert.equal((await post(`/cashier/payments/${paid.id}/void-request`, tokens.cashier, { reason: '' })).status, 400)
+    assert.equal((await post(`/cashier/payments/${paid.id}/void-request`, tokens.cashier, { reason: 'Wrong student' })).status, 201)
+    assert.equal((await post(`/cashier/payments/${paid.id}/void-request`, tokens.cashier, { reason: 'Wrong student again' })).status, 409, 'one open request per receipt')
+    assert.equal(await balanceOf(), 0, 'the receipt still counts until it is approved')
+    const request = await pending(paid.reference)
+    assert.equal((await post(`/admin/approvals/${request.id}/decide`, tokens.admin, { decision: 'approve' })).status, 200)
+    assert.equal(await balanceOf(), 6150)
+    const after = (await get(`/cashier/students/${juan.id}`, tokens.cashier)).data.payments.find((p) => p.id === paid.id)
+    assert.equal(after.status, 'Void')
   })
 
   test('the collection report adds up', async () => {
@@ -502,7 +549,7 @@ describe('administrator', () => {
   test('important actions are in the audit log', async () => {
     const log = (await get('/admin/audit?limit=200', tokens.admin)).data
     const actions = new Set(log.rows.map((r) => r.action))
-    for (const expected of ['login', 'login.failed', 'login.locked', 'user.create', 'user.reset-password', 'payment.record', 'enrollment.approve', 'request.released', 'grades.update', 'settings.update'])
+    for (const expected of ['login', 'login.failed', 'login.locked', 'user.create', 'user.reset-password', 'payment.record', 'change.request', 'change.approve', 'change.reject', 'payment.void', 'fee.add', 'enrollment.approve', 'request.released', 'grades.update', 'settings.update'])
       assert.ok(actions.has(expected), `audit log is missing "${expected}"`)
     assert.ok(log.total >= log.rows.length)
   })
@@ -551,5 +598,84 @@ describe('concurrency', () => {
     for (const r of results) assert.equal(r.status, 201, JSON.stringify(r.data))
     const numbers = results.map((r) => r.data.orNumber)
     assert.equal(new Set(numbers).size, numbers.length, `duplicate receipt numbers: ${numbers.join(', ')}`)
+  })
+})
+
+describe('schedule conflicts', () => {
+  let jose
+  let itew3
+  let itew4
+  let itp109
+
+  test('the subject list carries class times', async () => {
+    jose = await login('student', '26001007') // a returned request, so the subjects can still be edited
+    const r = await get('/student/enrollment', jose)
+    assert.equal(r.data.canEdit, true)
+    const by = Object.fromEntries(r.data.available.map((s) => [s.code, s]))
+    ;[itew3, itew4, itp109] = [by.ITEW3, by.ITEW4, by.ITP109]
+    assert.ok(itew3.meetings.length && itew4.meetings.length && itp109.meetings.length)
+  })
+
+  test('two subjects that overlap cannot be saved or submitted', async () => {
+    for (const submit of [false, true]) {
+      const r = await put('/student/enrollment', jose, { subjectIds: [itew3.id, itew4.id], submit })
+      assert.equal(r.status, 409)
+      assert.match(r.data.error, /conflict/i)
+      assert.match(r.data.error, /ITEW3/)
+      assert.match(r.data.error, /ITEW4/)
+    }
+  })
+
+  test('subjects that do not overlap are accepted', async () => {
+    assert.equal((await put('/student/enrollment', jose, { subjectIds: [itew3.id, itp109.id], submit: true })).status, 200)
+  })
+
+  test('the department and the registrar see the schedule, and a clash blocks approval', async () => {
+    // after the student submitted, the Registrar gives ITP109 an extra meeting that overlaps ITEW3
+    const added = await post(`/registrar/subjects/${itp109.id}/meetings`, tokens.registrar, { instructor: 'Test Instructor', day: 4, startMin: 540, endMin: 600, room: 'ZZ 1' })
+    assert.equal(added.status, 201)
+    const list = await get('/department/enrollment', tokens.ccit)
+    const req = list.data.requests.find((x) => x.studentNo === '26001007')
+    assert.ok(req.schedule.length >= 3, 'the student schedule is shown to the reviewer')
+    assert.ok(req.conflicts.length >= 1)
+    assert.match(req.conflicts[0], /ITEW3|ITP109/)
+    const blocked = await patch(`/department/enrollment/${req.id}`, tokens.ccit, { decision: 'approve' })
+    assert.equal(blocked.status, 409)
+    assert.match(blocked.data.error, /conflict/i)
+    // it can still be returned so the student can fix it
+    assert.equal((await patch(`/department/enrollment/${req.id}`, tokens.ccit, { decision: 'return', remarks: 'Your schedule has a conflict.' })).status, 200)
+  })
+})
+
+describe('security hardening', () => {
+  test('weak or common passwords are refused when changing a password', async () => {
+    const j = await login('student', '26001008')
+    for (const next of ['password123', '11111111', '26001008abc', 'short']) {
+      assert.equal((await post('/settings/password', j, { current: PASSWORDS.student, next })).status, 400, next)
+    }
+  })
+
+  test('the sign-in token is not stored as-is in the database', async () => {
+    const t = await login('student', '26001007')
+    const r = await fetch(BASE + '/auth/me', { headers: { authorization: `Bearer ${t}` } })
+    assert.equal(r.status, 200)
+    // a hash of the token must not work as a token
+    const { createHash } = await import('node:crypto')
+    const hashed = createHash('sha256').update(t).digest('hex')
+    assert.equal((await fetch(BASE + '/auth/me', { headers: { authorization: `Bearer ${hashed}` } })).status, 401)
+  })
+
+  test('security headers are sent and a non-JSON write is refused', async () => {
+    const r = await fetch(BASE + '/auth/me')
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff')
+    assert.equal(r.headers.get('x-frame-options'), 'DENY')
+    assert.equal(r.headers.get('cross-origin-opener-policy'), 'same-origin')
+    const form = await fetch(BASE + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'loginId=a&password=b' })
+    assert.equal(form.status, 415)
+  })
+
+  test('non-text sign-in values are rejected without a server error', async () => {
+    const r = await post('/auth/login', null, { role: 'student', loginId: { $ne: 1 }, password: ['x'] })
+    assert.equal(r.status, 400)
   })
 })

@@ -3,7 +3,7 @@
 Covers the testing section of the paper: test types, test cases and security testing with at least three vulnerabilities. Run everything with:
 
 ```bash
-npm test                  # 64 automated tests (node:test)
+npm test                  # 74 automated tests (node:test)
 npm run test:postgres     # the same tests through the real pg driver (the path Neon uses)
 node scripts/perf.mjs     # load test against a running server
 ```
@@ -60,7 +60,7 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 
 | Measure | Result |
 | --- | --- |
-| Automated tests | 64 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
+| Automated tests | 74 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
 | Load test | _Paste the output of `node scripts/perf.mjs` here (requests/sec, p50, p95, errors)_ |
 
 ## 9.5 Defect log (template)
@@ -72,6 +72,10 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 | BUG-03 | Edge-case probe | A setting could be saved as an object (stored as "[object Object]") | Low | Fixed, test added |
 | BUG-04 | Edge-case probe | An array was accepted as a new password | Low | Fixed, test added |
 | BUG-05 | Phone-width sweep of all 44 pages | Pending Tasks category filter overflowed the screen by 160 px at 375 px wide | Low | Fixed |
+| UX-01 | Tablet review | The menu covered its own burger button and could only be closed by finding it again; there was no Back button | Medium | Fixed: tap-outside, ✕, Esc, swipe and a Back button |
+| UX-02 | Tablet review | Page text could be highlighted by accident | Low | Fixed: view-only text (inputs and secrets stay selectable) |
+| BUG-06 | Review of enrollment | A student could be offered, and could submit, subjects meeting at the same time; reviewers could not see the schedule | High | Fixed: blocked in the picker, 409 on save and approve, schedule shown to reviewers, tests added |
+| SEC-02 | Review of cashier rights | The Cashier could edit fees, void receipts and type receipt numbers, i.e. alter their own records | High | Fixed: requests need Administrator approval; OR numbers are system-generated; tests added |
 | SEC-01 | Review of the new sign-in message | "N attempts left" appeared only for real accounts, revealing which IDs exist | Medium | Fixed (unknown IDs get the same countdown), test added |
 
 ## 9.6 Move from SQLite to PostgreSQL (Neon) — how it was checked

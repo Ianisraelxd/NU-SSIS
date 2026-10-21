@@ -39,8 +39,8 @@ Every requirement from the team's **System Requirements** (meeting document) map
 | --- | --- | --- | --- | --- |
 | CS-01 | View student payment information | Built | Students & Balances page · GET /api/cashier/students | cashier |
 | CS-02 | Record and verify payments | Built | Students & Balances → Record a payment · POST /api/cashier/students/:id/payments | cashier |
-| CS-03 | Manage student balances / fees | Built | Students & Balances → Fees · /api/cashier/fees | cashier |
-| CS-04 | Update payment status | Built | Payment history → Void · POST /api/cashier/payments/:id/void | cashier |
+| CS-03 | Manage student balances / fees | Built | Students & Balances → Ask to change / remove / add a fee · POST /api/cashier/students/:id/fee-requests · Admin → Approvals | cashier, admin |
+| CS-04 | Update payment status | Built | Payment history → Ask to void · POST /api/cashier/payments/:id/void-request · Admin → Approvals | cashier, admin |
 | CS-05 | Issue / record official receipt information | Built | Receipt dialog · GET /api/cashier/receipts/:kind/:id | cashier |
 | CS-06 | Confirm payment for enrollment or document requests | Built | Students & Balances, Document Payments pages | enrollment chain · document requests |
 | CS-07 | Generate payment / collection reports | Built | Reports page · GET /api/cashier/reports | cashier |
