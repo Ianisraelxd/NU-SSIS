@@ -115,7 +115,7 @@ if (process.env.NODE_ENV === 'production') {
   if (demo && Number(demo.n) > 0) console.warn('SECURITY WARNING: demo accounts (ADM-0001, CSH-0001, ...) exist with public passwords. Change or disable them before real use.')
 }
 
-const port = Number(process.env.API_PORT) || 3001
+const port = Number(process.env.API_PORT || process.env.PORT) || 3001
 const server = app.listen(port, () => console.log(`NU-SSIS API listening on http://localhost:${port}`))
 
 // close the database cleanly when the host stops the app (deploys, restarts)
