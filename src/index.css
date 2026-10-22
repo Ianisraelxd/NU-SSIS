@@ -2128,3 +2128,19 @@ select,
   margin: 0 0 8px;
   font-size: 15px;
 }
+
+/* Phones: the notification panel opens under the top bar across the screen instead of hanging off the left edge */
+@media (max-width: 640px) {
+  .popover-wrap { position: static; }
+  .popover {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: calc(100% + 6px);
+    width: auto;
+    max-width: none;
+    transform-origin: top center;
+  }
+  .popover.narrow { left: auto; width: min(240px, calc(100vw - 16px)); transform-origin: top right; }
+  .popover .list { max-height: 60vh; }
+}
