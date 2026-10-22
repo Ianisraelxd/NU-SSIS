@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Attachments from '../../components/Attachments.jsx'
 import { Async, Badge, Card, Modal, PageHead, Table, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { fmtDate, fmtDateTime, peso } from '../../lib/format.js'
@@ -54,6 +55,7 @@ function Details({ id, onClose, onChange }) {
                 </>
               )}
             </dl>
+            <Attachments base={`/registrar/requests/${r.id}`} />
             <ol className="timeline">
               {r.history.map((h, i) => (
                 <li key={i}>

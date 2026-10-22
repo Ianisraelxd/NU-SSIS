@@ -35,7 +35,7 @@ A backlog item is **done** when it is:
 | Database design — ERD, 3NF, schema | all | Manalo, Ramos | Built (`server/schema.js`); diagrams in [`08-system-models.md`](08-system-models.md) |
 | Digital queue | QU-* | Manalo, Ramos | Built |
 | Integration and seed data | all | Ramos | Built |
-| Test plan and security testing | SQ-* | Alico | Plan in [`09-test-plan.md`](09-test-plan.md); 74 automated tests pass |
+| Test plan and security testing | SQ-* | Alico | Plan in [`09-test-plan.md`](09-test-plan.md); 77 automated tests pass |
 | Documentation, ethics, referencing | — | Alico, Villarosa | Drafts in [`10-ethical-and-legal-notes.md`](10-ethical-and-legal-notes.md) |
 | Live deployment | PL-01 | Oca | Guide in [`11-deployment.md`](11-deployment.md); not yet deployed |
 

@@ -126,6 +126,10 @@ Both run the same SQL, so what works locally works on Neon.
 
 `.env` is read automatically by `npm run dev` and `npm start`. Neon may pause an idle free database, so the first request after a break can take a moment.
 
+### Neon CLI and Object Storage
+
+`neon.ts` declares the Neon services (a private `uploads` bucket). `neon deploy` creates them and writes `DATABASE_URL` and the `AWS_*` storage variables to `.env.local`, which `npm run dev` and `npm start` also read (`.env` wins if both set a value). With the `AWS_*` variables present, students can attach a PDF, PNG or JPEG (up to 2 MB, 5 per request) to a document request and the Registrar opens it through a 5-minute signed link. Without them the app works as before and attachments are switched off. The first start on an empty Neon database loads the demo data over the network, which takes a couple of minutes; use a throw-away branch (`neon checkout dev --create`) for experiments and keep real data off the demo accounts.
+
 ### Move your existing data (from the old SQLite file)
 
 Earlier versions kept everything in `server/data/nu-ssis.db`. To bring that data into PostgreSQL, run this **before the first start** against the new, empty database:
@@ -279,7 +283,7 @@ All routes are under `/api`, JSON in and out, `Authorization: Bearer <token>` af
 ## Testing
 
 ```bash
-npm test                  # 74 automated tests on a throw-away embedded PostgreSQL
+npm test                  # 77 automated tests on a throw-away embedded PostgreSQL
 node scripts/perf.mjs     # load test against a running server
 npm run lint
 ```

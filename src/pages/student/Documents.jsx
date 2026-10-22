@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Attachments from '../../components/Attachments.jsx'
 import { Async, Badge, Card, Field, Modal, PageHead, Table, useConfirm, useToast } from '../../components/ui.jsx'
 import { api } from '../../lib/api.js'
 import { burst } from '../../lib/fx.js'
@@ -46,6 +47,7 @@ function Details({ request, onClose }) {
             </>
           )}
         </dl>
+        <Attachments base={`/student/documents/requests/${request.id}`} canEdit={['Pending', 'For Payment'].includes(request.status)} />
         <div>
           <h3 className="mini-title" style={{ marginTop: 0 }}>
             Request history
