@@ -30,7 +30,7 @@ npm start        # http://localhost:3001 — API + website
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | The Neon connection string. **Treat it as a password** — set it in the host's secret settings, never in Git |
-| `API_PORT` | Port to listen on (many hosts supply `PORT`; set `API_PORT` to match) |
+| `API_PORT` | Port to listen on (falls back to the host's `PORT`, then 3001) |
 | `DB_POOL_MAX` | Most simultaneous database connections (default 10; keep it within your Neon plan's limit) |
 | `RATE_LIMIT` | Requests per minute per IP (default 600) |
 | `NODE_ENV=production` | Enables the strict Content-Security-Policy |

@@ -22,6 +22,7 @@ import {
   scheduleFor,
 } from '../util.js'
 import { REQUEST_SQL, moveRequest, withNo } from '../requests.js'
+import { listFiles } from '../attachments.js'
 import { clearanceReport, documentsReport, enrollmentReport, queueReport } from '../reports.js'
 import { mountAnnouncements } from './announcements.js'
 import { requireAuth } from './auth.js'
@@ -77,6 +78,12 @@ router.get('/requests', async (req, res) => {
     types: (await db.prepare('SELECT id, name FROM doc_types ORDER BY id').all()),
     counts: Object.fromEntries((await Promise.all(DOC_STATUSES.map(async (s) => [s, (await db.prepare('SELECT COUNT(*) AS c FROM doc_requests WHERE status = ?').get(s)).c])))),
   })
+})
+
+router.get('/requests/:id/files', async (req, res) => {
+  const row = await db.prepare('SELECT id FROM doc_requests WHERE id = ?').get(req.params.id)
+  if (!row) throw new HttpError(404, 'Request not found.')
+  res.json({ files: await listFiles(row.id) })
 })
 
 router.get('/requests/:id', async (req, res) => {

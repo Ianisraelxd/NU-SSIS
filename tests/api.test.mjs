@@ -679,3 +679,30 @@ describe('security hardening', () => {
     assert.equal(r.status, 400)
   })
 })
+
+describe('document request files (object storage)', () => {
+  test('without object storage configured, listing says so and uploading is refused cleanly', async () => {
+    const t = await login('student', '26001001')
+    const docs = await get('/student/documents', t)
+    const id = docs.data.requests[0].id
+    const list = await get(`/student/documents/requests/${id}/files`, t)
+    assert.equal(list.status, 200)
+    assert.equal(list.data.storage, false)
+    const up = await fetch(`${BASE}/student/documents/requests/${id}/files`, { method: 'POST', headers: { authorization: `Bearer ${t}`, 'content-type': 'image/png' }, body: Buffer.from('x') })
+    assert.equal(up.status, 503)
+  })
+
+  test("another student's request is not reachable", async () => {
+    const a = await login('student', '26001001')
+    const b = await login('student', '26001002')
+    const id = (await get('/student/documents', a)).data.requests[0].id
+    assert.equal((await get(`/student/documents/requests/${id}/files`, b)).status, 404)
+  })
+
+  test('file type is judged by content, not by the label', async () => {
+    const { sniffType } = await import('../server/filetype.js')
+    assert.equal(sniffType(Buffer.from('%PDF-1.7 ...')), 'application/pdf')
+    assert.equal(sniffType(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0])), 'image/jpeg')
+    assert.equal(sniffType(Buffer.from('<script>alert(1)</script>')), null)
+  })
+})

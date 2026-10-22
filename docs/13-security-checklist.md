@@ -46,4 +46,4 @@ What is already in place, what was added in this round, and what to do next, in 
 
 ## Checks that cover this
 
-`npm test` includes a "security hardening" group: weak passwords refused, token hash is not a valid token, headers present, non-JSON writes refused, and typed sign-in input rejected (74 tests in total).
+`npm test` includes a "security hardening" group: weak passwords refused, token hash is not a valid token, headers present, non-JSON writes refused, and typed sign-in input rejected (77 tests in total).

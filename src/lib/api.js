@@ -31,26 +31,27 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, body) {
+async function request(method, path, body, file) {
   loadingStart()
   try {
-    return await send(method, path, body)
+    return await send(method, path, body, file)
   } finally {
     loadingEnd()
   }
 }
 
-async function send(method, path, body) {
+async function send(method, path, body, file) {
   const token = getToken()
   let res
   try {
     res = await fetch(`/api${path}`, {
       method,
       headers: {
+        ...(file ? { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name) } : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      body: file ?? (body !== undefined ? JSON.stringify(body) : undefined),
     })
   } catch {
     throw new ApiError('Cannot reach the server. Check that the API is running.', 0)
@@ -69,4 +70,6 @@ export const api = {
   put: (path, body = {}) => request('PUT', path, body),
   patch: (path, body = {}) => request('PATCH', path, body),
   delete: (path) => request('DELETE', path),
+  // send a file's bytes as-is (the server accepts PDF, PNG and JPEG)
+  upload: (path, file) => request('POST', path, undefined, file),
 }

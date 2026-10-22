@@ -53,12 +53,14 @@ app.use('/api', (req, res, next) => {
   next()
 })
 
-// state-changing API calls must be JSON (blocks cross-site form posts)
+const UPLOAD_TYPES = ['application/pdf', 'image/png', 'image/jpeg']
+// state-changing API calls must be JSON (the file upload route also takes PDF/PNG/JPEG bytes) (blocks cross-site form posts)
 app.use('/api', (req, res, next) => {
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.headers['content-length'] > 0 && !req.is('application/json')) return res.status(415).json({ error: 'Send JSON.' })
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.headers['content-length'] > 0 && !req.is(['json', ...UPLOAD_TYPES])) return res.status(415).json({ error: 'Send JSON.' })
   next()
 })
 
+app.use('/api/student/documents/requests/:id/files', express.raw({ type: UPLOAD_TYPES, limit: '2mb' }))
 app.use(express.json({ limit: '100kb' }))
 
 app.use('/api/auth', authRoutes)
@@ -113,7 +115,7 @@ if (process.env.NODE_ENV === 'production') {
   if (demo && Number(demo.n) > 0) console.warn('SECURITY WARNING: demo accounts (ADM-0001, CSH-0001, ...) exist with public passwords. Change or disable them before real use.')
 }
 
-const port = Number(process.env.API_PORT) || 3001
+const port = Number(process.env.API_PORT || process.env.PORT) || 3001
 const server = app.listen(port, () => console.log(`NU-SSIS API listening on http://localhost:${port}`))
 
 // close the database cleanly when the host stops the app (deploys, restarts)

@@ -28,6 +28,8 @@ import {
   scheduleFor,
 } from '../util.js'
 import { FEATURES } from '../config.js'
+import { addFile, listFiles, removeFile } from '../attachments.js'
+import { requireStorage, storageReady } from '../storage.js'
 import { requireAuth } from './auth.js'
 
 const router = Router()
@@ -548,6 +550,29 @@ router.post('/documents/requests', async (req, res) => {
   await logRequest(row.id, 'Pending', 'Request submitted', req.user.id)
   await notifyRoles('registrar', `${req.user.name} requested ${type.name} (${reqNo(row.id)}).`, '/registrar/requests')
   res.status(201).json({ id: row.id, requestNo: reqNo(row.id), totalFee: type.fee * count })
+})
+
+// supporting files (valid ID, authorization letter...) kept in Neon Object Storage
+async function ownRequest(req) {
+  const row = await db.prepare('SELECT id, status FROM doc_requests WHERE id=? AND student_id=?').get(req.params.id, req.user.id)
+  if (!row) throw new HttpError(404, 'Request not found.')
+  return row
+}
+router.get('/documents/requests/:id/files', async (req, res) => {
+  const r = await ownRequest(req)
+  res.json({ files: await listFiles(r.id), storage: storageReady() })
+})
+router.post('/documents/requests/:id/files', async (req, res) => {
+  requireStorage()
+  const r = await ownRequest(req)
+  if (!['Pending', 'For Payment'].includes(r.status)) throw new HttpError(409, 'Files can only be added while the request is pending or waiting for payment.')
+  res.status(201).json(await addFile(req.user, r.id, req.body, req.headers['x-file-name']))
+})
+router.delete('/documents/requests/:id/files/:fileId', async (req, res) => {
+  const r = await ownRequest(req)
+  if (!['Pending', 'For Payment'].includes(r.status)) throw new HttpError(409, 'Files can only be removed while the request is pending or waiting for payment.')
+  await removeFile(req.user, r.id, req.params.fileId)
+  res.json({ ok: true })
 })
 
 router.post('/documents/requests/:id/cancel', async (req, res) => {
