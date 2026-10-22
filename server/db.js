@@ -20,7 +20,8 @@ import { PGlite, types as pgliteTypes } from '@electric-sql/pglite'
 import { SCHEMA, SCHEMA_VERSION } from './schema.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const url = process.env.DATABASE_URL
+// pg already treats sslmode=require/prefer/verify-ca as verify-full; say so, which also silences its warning
+const url = process.env.DATABASE_URL?.replace(/sslmode=(require|prefer|verify-ca)/, 'sslmode=verify-full')
 export const engine = url ? 'postgres' : 'pglite'
 
 // bigint (COUNT, SUM of integers) and numeric (AVG) arrive as strings by default; the app expects numbers
