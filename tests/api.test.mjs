@@ -45,7 +45,7 @@ const pickWithoutClashes = (subjects, n) => {
 }
 before(async () => {
   dir = mkdtempSync(join(tmpdir(), 'ssis-test-'))
-  server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL ?? '', DB_DIR: join(dir, 'pg'), API_PORT: String(PORT) }, stdio: ['ignore', 'pipe', 'inherit'] })
+  server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL ?? '', DB_DIR: join(dir, 'pg'), API_PORT: String(PORT), LOGIN_FAIL_LIMIT: '200' }, stdio: ['ignore', 'pipe', 'inherit'] })
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('server did not start')), 15000)
     server.stdout.on('data', (chunk) => {
@@ -704,5 +704,99 @@ describe('document request files (object storage)', () => {
     assert.equal(sniffType(Buffer.from('%PDF-1.7 ...')), 'application/pdf')
     assert.equal(sniffType(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0])), 'image/jpeg')
     assert.equal(sniffType(Buffer.from('<script>alert(1)</script>')), null)
+  })
+})
+
+describe('security testing: injection, XSS, role bypass, session expiry', () => {
+  test('SQL injection strings are treated as data on sign-in, search and path parameters', async () => {
+    const payloads = ["' OR '1'='1' --", "'; DROP TABLE users; --", "\" OR 1=1 --", "1; SELECT pg_sleep(5)", "' UNION SELECT login_id, password_hash FROM users --"]
+    for (const p of payloads) {
+      const login = await post('/auth/login', null, { role: 'student', loginId: p, password: p })
+      assert.ok([400, 401, 429].includes(login.status), `login with ${p} → ${login.status}`)
+      assert.ok(!JSON.stringify(login.data).toLowerCase().includes('syntax'), 'no database error text is leaked')
+      const search = await get(`/registrar/students?q=${encodeURIComponent(p)}`, tokens.registrar)
+      assert.equal(search.status, 200, `search with ${p}`)
+      assert.ok(Array.isArray(search.data.students ?? search.data.rows ?? []), 'search still returns a list')
+      const byId = await get(`/registrar/students/${encodeURIComponent(p)}`, tokens.registrar)
+      assert.ok([400, 404].includes(byId.status), `id ${p} → ${byId.status}`)
+    }
+    // the users table is still intact and the demo account still signs in
+    assert.equal((await post('/auth/login', null, { role: 'student', loginId: '26001001', password: PASSWORDS.student })).status, 200)
+  })
+
+  test('script tags are stored as plain text and returned as JSON with nosniff (the screens escape them)', async () => {
+    const payload = '<script>alert(1)</script><img src=x onerror=alert(2)>'
+    const sent = await post('/admin/announcements', tokens.admin, { title: 'XSS probe', body: payload })
+    assert.ok([200, 201].includes(sent.status), JSON.stringify(sent.data))
+    const res = await fetch(BASE + '/announcements', { headers: { authorization: `Bearer ${tokens.juan}` } })
+    assert.match(res.headers.get('content-type'), /^application\/json/)
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff')
+    const rows = await res.json()
+    const probe = (rows.rows ?? rows.announcements ?? rows).find((a) => a.title === 'XSS probe')
+    assert.equal(probe.body, payload, 'stored exactly as typed, never executed or rewritten on the server')
+  })
+
+  test('role bypass: every portal rejects every other role and anonymous callers', async () => {
+    const portals = [
+      ['student', ['/student/home', '/student/enrollment', '/student/documents']],
+      ['registrar', ['/registrar/overview', '/registrar/requests', '/registrar/students']],
+      ['cashier', ['/cashier/overview', '/cashier/students', '/cashier/change-requests']],
+      ['department', ['/department/overview', '/department/enrollment', '/department/students']],
+      ['admin', ['/admin/overview', '/admin/users', '/admin/audit', '/admin/approvals']],
+    ]
+    const holders = { student: tokens.juan, registrar: tokens.registrar, cashier: tokens.cashier, department: tokens.ccit, admin: tokens.admin }
+    for (const [owner, paths] of portals) {
+      for (const path of paths) {
+        assert.equal((await get(path)).status, 401, `anonymous ${path}`)
+        for (const [role, token] of Object.entries(holders)) {
+          const r = await get(path, token)
+          if (role === owner) assert.equal(r.status, 200, `${role} → ${path}`)
+          else assert.equal(r.status, 403, `${role} → ${path}`)
+        }
+      }
+    }
+  })
+
+  test('a student cannot read or change another student’s data by guessing IDs', async () => {
+    const other = (await get('/registrar/students?q=26001002', tokens.registrar)).data
+    const id = (other.students ?? other.rows)[0].id
+    assert.equal((await get(`/registrar/students/${id}`, tokens.juan)).status, 403)
+    assert.equal((await put(`/registrar/students/${id}`, tokens.juan, { name: 'Hacked' })).status, 403)
+    assert.equal((await get(`/cashier/students/${id}`, tokens.juan)).status, 403)
+  })
+
+  test('session expiry: a token stops working when its time is up, and after sign-out', async () => {
+    const out = await post('/auth/login', null, { role: 'student', loginId: '26001004', password: PASSWORDS.student })
+    assert.equal(out.status, 200, JSON.stringify(out.data))
+    const t = out.data.token
+    assert.equal((await get('/auth/me', t)).status, 200)
+    assert.equal((await post('/auth/logout', t)).status, 200)
+    assert.equal((await get('/auth/me', t)).status, 401, 'signed-out token is rejected')
+
+    // a second server (always on its own embedded database) whose sign-ins last only 2 seconds
+    const port = PORT + 100
+    const dir2 = mkdtempSync(join(tmpdir(), 'ssis-ttl-'))
+    const short = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, DATABASE_URL: '', DB_DIR: join(dir2, 'pg'), API_PORT: String(port), SESSION_TTL_SECONDS: '2' }, stdio: ['ignore', 'pipe', 'inherit'] })
+    try {
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('short-session server did not start')), 20000)
+        short.stdout.on('data', (c) => String(c).includes('listening') && (clearTimeout(timer), resolve()))
+        short.on('exit', (code) => reject(new Error(`exited (${code})`)))
+      })
+      const call2 = (path, token, body) => fetch(`http://localhost:${port}/api${path}`, { method: body ? 'POST' : 'GET', headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined })
+      const login2 = await (await call2('/auth/login', null, { role: 'student', loginId: '26001001', password: PASSWORDS.student })).json()
+      assert.equal((await call2('/auth/me', login2.token)).status, 200)
+      await new Promise((r) => setTimeout(r, 2600))
+      const expired = await call2('/auth/me', login2.token)
+      assert.equal(expired.status, 401)
+      assert.match((await expired.json()).error, /expired/i)
+    } finally {
+      short.kill()
+      try {
+        rmSync(dir2, { recursive: true, force: true })
+      } catch {
+        /* best effort */
+      }
+    }
   })
 })

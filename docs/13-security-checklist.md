@@ -46,4 +46,9 @@ What is already in place, what was added in this round, and what to do next, in 
 
 ## Checks that cover this
 
-`npm test` includes a "security hardening" group: weak passwords refused, token hash is not a valid token, headers present, non-JSON writes refused, and typed sign-in input rejected (77 tests in total).
+`npm test` includes two security groups (82 tests in total):
+
+- **security hardening** — weak passwords refused, a hash of the token is not a valid token, headers present, non-JSON writes refused, typed sign-in input rejected.
+- **security testing: injection, XSS, role bypass, session expiry** — SQL injection strings on sign-in, search and record IDs; script tags stored as plain text; every portal rejects every other role and anonymous callers; a student cannot reach another student's data by guessing IDs; a token stops working when its time is up (a second server with 2-second sessions) and after sign-out.
+
+`npm run test:fuzz` calls all 124 routes as every role with hostile input (4,085 calls) and fails on any server error; the last run found 0 problems. The brute-force lockout, the per-IP throttle and the sign-in log are covered by the authentication tests. The Word document (docs/SSIS-System-Diagrams-and-Database-Design.docx, section 8) describes each test and its result.
