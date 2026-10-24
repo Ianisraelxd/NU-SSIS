@@ -153,7 +153,7 @@ The tables are created automatically. If the database was made by a different sc
 
 ## Demo accounts
 
-Development-only accounts created by `server/seed.js`. **Change or remove them before any real use.**
+Development-only accounts created by `server/seed.js`. These passwords are **public** (they are in this file and in the source), so never reuse them anywhere, never show them in a recording or screenshot of a live site, and **change or remove the accounts before any real use**. In production (`NODE_ENV=production`) the server prints a warning while they still exist.
 
 | Role | ID | Password |
 | --- | --- | --- |
@@ -261,7 +261,7 @@ NU-SSIS/
 
 ### Database
 
-PostgreSQL with these groups of tables: **people** (`users`, `sessions`, `students`, `departments`, `programs`), **academics** (`terms`, `subjects`, `meetings`, `student_subjects`, `year_progress`, `enrollment_requests`, `enrollment_items`, `academic_requirements`), **money** (`fees`, `payments`), **services** (`doc_types`, `doc_requests`, `request_history`, `clearances`, `queue_tickets`), and **system** (`announcements`, `notifications`, `settings`, `audit_log`, `login_attempts`). Entity-relationship and 3NF notes are in [`docs/08-system-models.md`](docs/08-system-models.md). The data layer is `server/db.js`: a small async API (`await db.prepare(sql).get(…)`), a connection pool for PostgreSQL, transactions, and advisory locks that keep queue and receipt numbers unique when requests overlap. Money and grades are `DOUBLE PRECISION`; ids are identity columns.
+PostgreSQL with these groups of tables: **people** (`users`, `sessions`, `students`, `departments`, `programs`), **academics** (`terms`, `subjects`, `meetings`, `student_subjects`, `year_progress`, `enrollment_requests`, `enrollment_items`, `academic_requirements`), **money** (`fees`, `payments`, `change_requests`), **services** (`doc_types`, `doc_requests`, `request_history`, `request_files`, `clearances`, `queue_tickets`), and **system** (`announcements`, `notifications`, `settings`, `audit_log`, `login_attempts`). Entity-relationship and 3NF notes are in [`docs/08-system-models.md`](docs/08-system-models.md). The data layer is `server/db.js`: a small async API (`await db.prepare(sql).get(…)`), a connection pool for PostgreSQL, transactions, and advisory locks that keep queue and receipt numbers unique when requests overlap. Money and grades are `DOUBLE PRECISION`; ids are identity columns.
 
 ### API overview
 
@@ -274,28 +274,30 @@ All routes are under `/api`, JSON in and out, `Authorization: Bearer <token>` af
 | Student | `/student` | `/home`, `/enrollment`, `/clearance`, `/documents`, `/documents/requests`, `/account` |
 | Queue | `/queue` | `GET /offices`, `GET /mine`, `POST /tickets`, `DELETE /tickets/:id`, staff: `GET /staff`, `POST /staff/next`, `POST /staff/:id/done`, `POST /staff/:id/skip` |
 | Registrar | `/registrar` | `/students`, `/requests`, `/enrollment`, `/subjects`, `/grades`, `/clearance`, `/reports` |
-| Cashier | `/cashier` | `/overview`, `/students`, `/fees`, `/payments`, `/receipts`, `/requests`, `/reports` |
+| Cashier | `/cashier` | `/overview`, `/students`, `/students/:id/fee-requests`, `/payments`, `/payments/:id/void-request`, `/change-requests`, `/receipts`, `/requests`, `/reports` |
 | Department | `/department` | `/overview`, `/students` (incl. clearance), `/enrollment`, `/requirements` |
-| Admin | `/admin` | `/overview`, `/users`, `/departments`, `/settings`, `/terms`, `/audit`, `/login-attempts`, `/permissions`, `/reports` |
+| Admin | `/admin` | `/overview`, `/users`, `/approvals`, `/departments`, `/settings`, `/terms`, `/audit`, `/login-attempts`, `/permissions`, `/reports` |
 
 ---
 
 ## Testing
 
 ```bash
-npm test                  # 77 automated tests on a throw-away embedded PostgreSQL
+npm test                  # 82 automated tests on a throw-away embedded PostgreSQL
+npm run test:postgres     # the same tests through the real pg driver (what Neon uses)
+npm run test:fuzz         # calls all 124 routes as every role with hostile input (start the server first)
 node scripts/perf.mjs     # load test against a running server
 npm run lint
 ```
 
-The suite covers password hashing, the document-status rules, the enrollment chain, payments and receipts, queue rules, role boundaries, department scoping, brute-force lockout, SQL-injection attempts, login-attempt logging and input validation. The test plan, security checks and the defect log are in [`docs/09-test-plan.md`](docs/09-test-plan.md).
+The suite covers password hashing, the document-status rules, the enrollment chain, schedule-conflict blocking, payments and receipts, the Cashier-request / Administrator-approval flow, queue rules, department scoping and input validation. The security tests cover **SQL injection**, **XSS** (script tags are stored and shown as plain text), the **brute-force lockout** and sign-in log, a **role-bypass matrix** (every portal rejects every other role and anonymous callers), and **session expiry**. The test plan, security checks and the defect log are in [`docs/09-test-plan.md`](docs/09-test-plan.md).
 
 ## Security
 
-- Passwords hashed with **scrypt** and per-user salts; sessions expire after 7 days and end on password change. Temporary passwords are shown once.
+- Passwords hashed with **scrypt** and per-user salts, with strength rules (8–128 characters, no common passwords). Sessions expire after 7 days, end on sign-out and password change, and only a **hash of the session token** is stored. Temporary passwords are shown once.
 - **Account lockout** (5 failures, 15 minutes), per-IP failed-login throttle, global **rate limit**, and a **login-attempt log**.
 - Every SQL statement is **parameterised**; React escapes displayed text; security headers and a strict Content-Security-Policy in production.
-- **Role checks** on every route, department scoping, and an **audit log** of sensitive actions (payments, grades, settings, account changes, grade views).
+- **Role checks** on every route, department scoping, **separation of duties** (the Cashier can only *request* a fee change or a receipt void; the Administrator approves), and an **audit log** of sensitive actions (payments, grades, settings, account changes, approvals, grade views).
 
 This is a school-project build. Before real use: change all demo passwords, serve over HTTPS, and review [`docs/10-ethical-and-legal-notes.md`](docs/10-ethical-and-legal-notes.md) (Data Privacy Act of 2012).
 
@@ -309,6 +311,7 @@ This is a school-project build. Before real use: change all demo passwords, serv
 | `npm test` | Automated tests |
 | `npm run db:reset` | Wipe and re-seed the database (`-- --yes` is required when `DATABASE_URL` is set) |
 | `npm run test:postgres` | Run the tests through the real `pg` driver (what Neon uses) |
+| `npm run test:fuzz` | API fuzz: every route × every role with hostile input (needs a running server; `FUZZ_BASE` sets the address) |
 | `npm run lint` | Lint |
 
 | Variable | Default | Meaning |
@@ -320,6 +323,9 @@ This is a school-project build. Before real use: change all demo passwords, serv
 | `LOG_QUERIES` | *(off)* | `1` prints every SQL statement — handy for spotting slow pages |
 | `DB_LATENCY_MS` | *(off)* | e.g. `40` adds a delay to every statement to feel how the app behaves against a remote database |
 | `RATE_LIMIT` | `600` | API requests per minute per IP |
+| `LOGIN_FAIL_LIMIT` | `10` | Failed sign-ins per minute per IP before 429 |
+| `SESSION_TTL_SECONDS` | `604800` (7 days) | How long a sign-in lasts |
+| `TRUST_PROXY` | *(off)* | Set to `1` behind a host or proxy so rate limits and the sign-in log use the visitor’s real IP |
 | `ENABLE_LMS` / `VITE_ENABLE_LMS` | `false` | Optional LMS extras (Faculty portal, class activities, private comments). Outside the project scope; set **both** in `.env` to turn on. |
 
 Copy `.env.example` to `.env` to change them. If you change `API_PORT` in development, also update the proxy target in `vite.config.js`.

@@ -3,7 +3,7 @@
 Covers the testing section of the paper: test types, test cases and security testing with at least three vulnerabilities. Run everything with:
 
 ```bash
-npm test                  # 77 automated tests (node:test)
+npm test                  # 82 automated tests (node:test)
 npm run test:postgres     # the same tests through the real pg driver (the path Neon uses)
 node scripts/perf.mjs     # load test against a running server
 ```
@@ -47,10 +47,10 @@ Tests use a throw-away embedded PostgreSQL (`DB_DIR`), so they never touch your 
 | 1 | **SQL injection** — attacker types SQL in a field (e.g. `' OR 1=1 --` as the login ID or a search box) | Send injection strings to login and search endpoints | Every query is parameterised (`?` placeholders); no string-built SQL | Injection strings are treated as plain text; no bypass |
 | 2 | **Brute-force password guessing** | Repeated wrong logins on one account and from one IP | Account locks 15 min after 5 failures; per-IP failed-login throttle | Locked after 5 tries; correct password also refused while locked |
 | 3 | **Denial of service / request flooding** | Burst of requests from one client | Global rate limit (600 / min / IP, `RATE_LIMIT`) returns 429 | 429 after the limit |
-| 4 | **Broken access control** — a user reaching another role's data | Call each module's API with the wrong role and without a token | `requireAuth(role)` on every route; department data scoped to its own department | 401 / 403 as expected |
-| 5 | **Cross-site scripting (XSS)** | Save `<script>` text in names/remarks and view it | React escapes output; production Content-Security-Policy; security headers | Rendered as text |
+| 4 | **Broken access control** — a user reaching another role's data | Automated role matrix: 16 pages × 5 roles + anonymous; a student guessing another student's ID; the fuzz run (`npm run test:fuzz`, 124 routes, 4,085 calls) repeats every route as every role | `requireAuth(role)` on every route; department data scoped to its own department | 401 / 403 as expected |
+| 5 | **Cross-site scripting (XSS)** | Automated test stores `<script>` / `<img onerror>` text and reads it back; browser check opened it as a student: shown literally, nothing ran | React escapes output; production Content-Security-Policy; security headers | Rendered as text |
 | 6 | **Weak password storage** | Inspect the database | scrypt with per-user salt; temporary passwords shown once | No plain text stored |
-| 7 | **Session abuse** | Reuse a token after logout / password change | 7-day expiry; logout and password change delete sessions | Old tokens rejected |
+| 7 | **Session abuse** | Automated test: a second server with 2-second sessions, token rejected after expiry and after sign-out; the stored value is a hash | 7-day expiry; logout and password change delete sessions | Old tokens rejected |
 
 Items 1–3 are the three required by the course; 4–7 are extra.
 
@@ -60,7 +60,7 @@ Measured on the development PC with `scripts/perf.mjs` against a throw-away serv
 
 | Measure | Result |
 | --- | --- |
-| Automated tests | 77 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
+| Automated tests | 82 passed, 0 failed — on the embedded PostgreSQL, through the `pg` driver, and against a real PostgreSQL 18 server with a connection pool |
 | Load test | _Paste the output of `node scripts/perf.mjs` here (requests/sec, p50, p95, errors)_ |
 
 ## 9.5 Defect log (template)
