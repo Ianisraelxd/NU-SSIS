@@ -4,7 +4,7 @@ import { db } from '../db.js'
 import { FEATURES } from '../config.js'
 import { DUMMY_HASH, HttpError, audit, hashPassword, hashToken, verifyPassword } from '../util.js'
 
-const SESSION_DAYS = 7
+const SESSION_SECONDS = Number(process.env.SESSION_TTL_SECONDS) || 7 * 86400 // sign-ins last 7 days (tests shorten this)
 const MAX_SESSIONS = 10 // oldest sessions are dropped beyond this many devices
 const MAX_FAILED_LOGINS = 5 // then the account locks
 const LOCK_MINUTES = 15
@@ -48,10 +48,11 @@ export function requireAuth(role) {
 
 // Per-IP throttle for FAILED sign-ins (a second layer on top of the per-account lockout below).
 // Successful sign-ins are not counted, so a computer lab sharing one IP is not locked out.
+const FAIL_LIMIT = Number(process.env.LOGIN_FAIL_LIMIT) || 10 // failed sign-ins per IP per minute
 const failures = new Map()
 const recentFailures = (ip) => (failures.get(ip) || []).filter((t) => Date.now() - t < 60_000)
 function throttle(ip) {
-  if (recentFailures(ip).length >= 10) throw new HttpError(429, 'Too many failed attempts. Try again in a minute.')
+  if (recentFailures(ip).length >= FAIL_LIMIT) throw new HttpError(429, 'Too many failed attempts. Try again in a minute.')
 }
 function recordFailure(ip) {
   failures.set(ip, [...recentFailures(ip), Date.now()])
@@ -124,7 +125,7 @@ router.post('/login', async (req, res) => {
 
   await db.prepare('UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?').run(user.id)
   const token = randomBytes(32).toString('hex')
-  const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString()
+  const expires = new Date(Date.now() + SESSION_SECONDS * 1000).toISOString()
   await db.prepare('DELETE FROM sessions WHERE user_id = ? AND (expires_at <= ? OR token NOT IN (SELECT token FROM sessions WHERE user_id = ? ORDER BY expires_at DESC LIMIT ?))').run(user.id, new Date().toISOString(), user.id, MAX_SESSIONS - 1)
   await db.prepare('INSERT INTO sessions (token, user_id, expires_at) VALUES (?,?,?)').run(hashToken(token), user.id, expires)
   await logAttempt(req, { loginId: id, role, userId: user.id, success: true, reason: 'signed in' })
